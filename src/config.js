@@ -1,25 +1,26 @@
 const path = require('path');
 const fs = require('fs');
 
-// Only load dotenv if .env file exists (local dev)
-// On production (Railway), env vars are set directly
+// Load env vars from file (priority order):
+// 1. .env (local dev)
+// 2. .env.railway (production workaround)
+// 3. System env vars (Railway injected)
 const projectEnv = path.join(__dirname, '..', '.env');
+const railwayEnv = path.join(__dirname, '..', '.env.railway');
 const fallbackEnv = '/tmp/telegram-sales-bot/.env';
 
 if (fs.existsSync(projectEnv)) {
   console.log('📄 Loading .env from:', projectEnv);
   require('dotenv').config({ path: projectEnv });
+} else if (fs.existsSync(railwayEnv)) {
+  console.log('📄 Loading .env.railway from:', railwayEnv);
+  require('dotenv').config({ path: railwayEnv });
 } else if (fs.existsSync(fallbackEnv)) {
   console.log('📄 Loading .env from:', fallbackEnv);
   require('dotenv').config({ path: fallbackEnv });
 } else {
   console.log('ℹ️  No .env file found, using system environment variables');
 }
-
-// Debug: log ALL env var keys to see what Railway injects
-console.log('🔍 ALL ENV KEYS:', Object.keys(process.env).sort().join(', '));
-console.log('🔍 BOT_TOKEN value:', JSON.stringify(process.env.BOT_TOKEN));
-console.log('🔍 Total env vars:', Object.keys(process.env).length);
 
 const config = {
   // Telegram Bot
