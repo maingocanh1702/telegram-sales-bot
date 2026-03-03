@@ -53,6 +53,7 @@ async function main() {
     if (isProduction) {
         const telegramWebhookPath = `/telegram-webhook/${config.botToken}`;
         app.post(telegramWebhookPath, (req, res) => {
+            console.log(`[WEBHOOK] Received Telegram update:`, JSON.stringify(req.body).substring(0, 200));
             bot.processUpdate(req.body);
             res.sendStatus(200);
         });
