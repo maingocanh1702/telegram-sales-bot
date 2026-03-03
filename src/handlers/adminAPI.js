@@ -19,6 +19,22 @@ function setupAdminAPI(app, bot) {
     // Apply auth to all /api/admin routes
     app.use('/api/admin', authMiddleware);
 
+    // ==================== Debug (temporary) ====================
+    app.get('/api/admin/debug/products', authMiddleware, (req, res) => {
+        try {
+            const d = db.getDb();
+            const allProducts = d.exec('SELECT id, name, is_active, typeof(is_active) as type FROM products');
+            const botProducts = db.getProducts();
+            res.json({
+                raw: allProducts,
+                botVisible: botProducts,
+                botCount: botProducts.length,
+            });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message });
+        }
+    });
+
     // ==================== Dashboard ====================
 
     app.get('/api/admin/dashboard', (req, res) => {
