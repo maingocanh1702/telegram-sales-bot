@@ -377,7 +377,7 @@ function getRecentOrders(limit = 20) {
 
 function getAllProductsStock() {
     const stmt = db.prepare(`
-    SELECT p.id, p.name, p.price, p.is_active,
+    SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 0) as available,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 1) as sold,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id) as total
