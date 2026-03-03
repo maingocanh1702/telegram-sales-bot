@@ -189,9 +189,16 @@ function setupAdminAPI(app, bot) {
 
     app.post('/api/admin/orders/:code/confirm', async (req, res) => {
         try {
-            const order = db.getPendingOrderByCode(req.params.code);
+            // Allow confirming both pending AND expired orders (admin override)
+            const order = db.getOrderByCode(req.params.code);
             if (!order) {
-                return res.status(404).json({ error: true, message: 'Pending order not found', code: 'NOT_FOUND' });
+                return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
+            }
+            if (order.status === 'paid' || order.status === 'delivered') {
+                return res.status(400).json({ error: true, message: 'Order already confirmed', code: 'ALREADY_CONFIRMED' });
+            }
+            if (order.status === 'cancelled') {
+                return res.status(400).json({ error: true, message: 'Order was cancelled', code: 'CANCELLED' });
             }
             db.updateOrderStatus(req.params.code, 'paid');
 
