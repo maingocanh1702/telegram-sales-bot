@@ -194,7 +194,7 @@ function addProduct(name, price, description = '', note = '', categoryId = null,
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)',
         [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
