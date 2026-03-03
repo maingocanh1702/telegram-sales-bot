@@ -21,12 +21,8 @@ async function deliverCredentials(bot, order) {
         return false;
     }
 
-    // Mark credentials as sold
+    // Mark credentials as sold (tentatively)
     const credIds = credentials.map((c) => c.id);
-    db.markCredentialsSold(credIds, order.id);
-
-    // Update order status to delivered
-    db.updateOrderStatus(order.order_code, 'delivered');
 
     // Build delivery message
     let text = `✅ **ĐƠN HÀNG #${order.order_code} - HOÀN TẤT**\n\n`;
@@ -37,7 +33,7 @@ async function deliverCredentials(bot, order) {
     text += `📋 **THÔNG TIN TÀI KHOẢN:**\n\n`;
 
     // Get product's field config
-    const product = db.getProduct(order.product_id);
+    const product = db.getProductById(order.product_id);
     const fields = product ? JSON.parse(product.credential_fields || '[]') : [];
 
     for (let i = 0; i < credentials.length; i++) {
@@ -65,6 +61,9 @@ async function deliverCredentials(bot, order) {
                 ],
             },
         });
+        // Only mark as sold and delivered AFTER successful message send
+        db.markCredentialsSold(credIds, order.id);
+        db.updateOrderStatus(order.order_code, 'delivered');
         console.log(`✅ Delivered ${credentials.length} credentials for order ${order.order_code}`);
         return true;
     } catch (err) {
