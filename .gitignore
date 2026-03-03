@@ -5,3 +5,4 @@ node_modules/
 *.db-shm
 *.db-wal
 .DS_Store
+node_modules
