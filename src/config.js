@@ -7,10 +7,22 @@ const projectEnv = path.join(__dirname, '..', '.env');
 const fallbackEnv = '/tmp/telegram-sales-bot/.env';
 
 if (fs.existsSync(projectEnv)) {
+  console.log('📄 Loading .env from:', projectEnv);
   require('dotenv').config({ path: projectEnv });
 } else if (fs.existsSync(fallbackEnv)) {
+  console.log('📄 Loading .env from:', fallbackEnv);
   require('dotenv').config({ path: fallbackEnv });
+} else {
+  console.log('ℹ️  No .env file found, using system environment variables');
 }
+
+// Debug: log available env vars (masked)
+console.log('🔍 ENV check:', {
+  BOT_TOKEN: process.env.BOT_TOKEN ? `${process.env.BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
+  ADMIN_TELEGRAM_ID: process.env.ADMIN_TELEGRAM_ID || 'NOT SET',
+  DB_PATH: process.env.DB_PATH || 'NOT SET',
+  PORT: process.env.PORT || 'NOT SET',
+});
 
 const config = {
   // Telegram Bot
@@ -19,9 +31,9 @@ const config = {
 
   // Bank Info (VietQR)
   bank: {
-    id: process.env.BANK_ID,         // BIN code (970407 = Techcombank)
-    code: process.env.BANK_CODE,     // TCB
-    name: process.env.BANK_NAME,     // Techcombank
+    id: process.env.BANK_ID,
+    code: process.env.BANK_CODE,
+    name: process.env.BANK_NAME,
     accountNo: process.env.BANK_ACCOUNT_NO,
     accountName: process.env.BANK_ACCOUNT_NAME,
   },
