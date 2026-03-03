@@ -16,13 +16,10 @@ if (fs.existsSync(projectEnv)) {
   console.log('ℹ️  No .env file found, using system environment variables');
 }
 
-// Debug: log available env vars (masked)
-console.log('🔍 ENV check:', {
-  BOT_TOKEN: process.env.BOT_TOKEN ? `${process.env.BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
-  ADMIN_TELEGRAM_ID: process.env.ADMIN_TELEGRAM_ID || 'NOT SET',
-  DB_PATH: process.env.DB_PATH || 'NOT SET',
-  PORT: process.env.PORT || 'NOT SET',
-});
+// Debug: log ALL env var keys to see what Railway injects
+console.log('🔍 ALL ENV KEYS:', Object.keys(process.env).sort().join(', '));
+console.log('🔍 BOT_TOKEN value:', JSON.stringify(process.env.BOT_TOKEN));
+console.log('🔍 Total env vars:', Object.keys(process.env).length);
 
 const config = {
   // Telegram Bot
