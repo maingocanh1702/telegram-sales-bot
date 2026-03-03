@@ -1,10 +1,14 @@
 const path = require('path');
+const fs = require('fs');
 
-// Try project dir first, fallback to /tmp if EPERM
+// Only load dotenv if .env file exists (local dev)
+// On production (Railway), env vars are set directly
 const projectEnv = path.join(__dirname, '..', '.env');
 const fallbackEnv = '/tmp/telegram-sales-bot/.env';
-const result = require('dotenv').config({ path: projectEnv });
-if (result.error) {
+
+if (fs.existsSync(projectEnv)) {
+  require('dotenv').config({ path: projectEnv });
+} else if (fs.existsSync(fallbackEnv)) {
   require('dotenv').config({ path: fallbackEnv });
 }
 
