@@ -20,11 +20,24 @@ async function main() {
     // 1. Init database
     await db.initDatabase();
 
-    // 2. Create bot instance (polling mode)
-    const bot = new TelegramBot(config.botToken, { polling: true });
-    console.log('🤖 Bot connected to Telegram');
+    // 2. Detect environment — use webhook on Railway, polling locally
+    const isProduction = !!process.env.RAILWAY_PUBLIC_DOMAIN;
+    const publicUrl = isProduction
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : null;
 
-    // 3. Setup Express server for SePay webhook
+    let bot;
+    if (isProduction) {
+        // Webhook mode — no polling, no 409 conflicts
+        bot = new TelegramBot(config.botToken, { polling: false });
+        console.log('🤖 Bot created in WEBHOOK mode (production)');
+    } else {
+        // Polling mode — for local development
+        bot = new TelegramBot(config.botToken, { polling: true });
+        console.log('🤖 Bot created in POLLING mode (local)');
+    }
+
+    // 3. Setup Express server
     const app = express();
     app.use(express.json());
 
@@ -36,18 +49,38 @@ async function main() {
     // Serve static files (admin panel)
     app.use(express.static(path.join(__dirname, '..', 'public')));
 
-    // Setup webhook handler
+    // Telegram webhook endpoint (production only)
+    if (isProduction) {
+        const telegramWebhookPath = `/telegram-webhook/${config.botToken}`;
+        app.post(telegramWebhookPath, (req, res) => {
+            bot.processUpdate(req.body);
+            res.sendStatus(200);
+        });
+    }
+
+    // Setup SePay webhook handler
     setupWebhookHandler(app, bot);
 
     // Setup admin API
     setupAdminAPI(app, bot);
 
     // Start Express server
-    app.listen(config.port, () => {
+    app.listen(config.port, async () => {
         console.log(`🌐 Express server running on port ${config.port}`);
+
+        // Set Telegram webhook after server is listening (production only)
+        if (isProduction) {
+            const telegramWebhookUrl = `${publicUrl}/telegram-webhook/${config.botToken}`;
+            try {
+                await bot.setWebHook(telegramWebhookUrl);
+                console.log(`📡 Telegram webhook set: ${publicUrl}/telegram-webhook/***`);
+            } catch (err) {
+                console.error('❌ Failed to set Telegram webhook:', err.message);
+            }
+        }
     });
 
-    // 4. Setup bot handlers (order matters — admin first to catch commands)
+    // 4. Setup bot handlers
     setupAdminHandler(bot);
     setupMenuHandler(bot);
     setupProductHandler(bot);
@@ -60,21 +93,28 @@ async function main() {
     // 6. Bot info
     const botInfo = await bot.getMe();
     console.log(`✅ Bot @${botInfo.username} is ready!`);
-    console.log(`📡 Webhook URL: http://localhost:${config.port}${config.webhookPath}`);
+    console.log(`📡 SePay Webhook: http://localhost:${config.port}${config.webhookPath}`);
     console.log(`🔧 Admin Panel: http://localhost:${config.port}/admin.html`);
     console.log(`👤 Admin ID: ${config.adminTelegramId}`);
+    if (isProduction) {
+        console.log(`🌍 Mode: PRODUCTION (webhook)`);
+    } else {
+        console.log(`🏠 Mode: LOCAL (polling)`);
+    }
 
     // Graceful shutdown
     process.on('SIGINT', () => {
         console.log('\n🛑 Shutting down...');
-        bot.stopPolling();
+        if (!isProduction) bot.stopPolling();
+        if (isProduction) bot.deleteWebHook();
         db.saveDatabase();
         process.exit(0);
     });
 
     process.on('SIGTERM', () => {
         console.log('\n🛑 Shutting down...');
-        bot.stopPolling();
+        if (!isProduction) bot.stopPolling();
+        if (isProduction) bot.deleteWebHook();
         db.saveDatabase();
         process.exit(0);
     });
@@ -84,3 +124,4 @@ main().catch((err) => {
     console.error('❌ Fatal error:', err);
     process.exit(1);
 });
+
