@@ -29,7 +29,9 @@ function setupProductHandler(bot) {
  * Show list of all available products
  */
 function showProductList(bot, chatId, messageId) {
+    console.log(`[DEBUG] showProductList called - chatId: ${chatId}`);
     const products = db.getProducts();
+    console.log(`[DEBUG] getProducts returned ${products.length} products:`, JSON.stringify(products.map(p => ({ id: p.id, name: p.name, is_active: p.is_active }))));
 
     if (products.length === 0) {
         const text = '📭 Hiện tại chưa có sản phẩm nào.\n\nVui lòng quay lại sau!';
