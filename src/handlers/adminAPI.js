@@ -142,6 +142,29 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    app.put('/api/admin/credentials/:id', (req, res) => {
+        try {
+            const { data } = req.body;
+            if (!data || typeof data !== 'object') {
+                return res.status(400).json({ error: true, message: 'data object required', code: 'VALIDATION_ERROR' });
+            }
+            const d = db.getDb();
+            // Only allow editing unsold credentials
+            const existing = d.exec('SELECT id, is_sold FROM credentials WHERE id = ?', [parseInt(req.params.id)]);
+            if (!existing.length || !existing[0].values.length) {
+                return res.status(404).json({ error: true, message: 'Credential not found', code: 'NOT_FOUND' });
+            }
+            if (existing[0].values[0][1] === 1) {
+                return res.status(400).json({ error: true, message: 'Cannot edit sold credential', code: 'VALIDATION_ERROR' });
+            }
+            d.run('UPDATE credentials SET data = ? WHERE id = ?', [JSON.stringify(data), parseInt(req.params.id)]);
+            db.saveDatabase();
+            res.json({ message: 'Credential updated' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     app.delete('/api/admin/credentials/:id', (req, res) => {
         try {
             const d = db.getDb();

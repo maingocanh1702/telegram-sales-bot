@@ -926,13 +926,14 @@
         }
         for (const c of creds) {
           const data = typeof c.data === 'string' ? JSON.parse(c.data || '{}') : (c.data || {});
-          html += `<tr><td>${c.id}</td>`;
+          const dataAttr = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+          html += `<tr id="cred-row-${c.id}"><td>${c.id}</td>`;
           fields.forEach(f => {
             const val = data[f.key];
-            html += `<td>${val ? `<code>${val}</code>` : '<span style="color:var(--text-muted)">—</span>'}</td>`;
+            html += `<td class="cred-val" data-key="${f.key}">${val ? `<code>${val}</code>` : '<span style="color:var(--text-muted)">—</span>'}</td>`;
           });
           html += `<td>${c.is_sold ? '<span class="badge badge-muted">Đã bán</span>' : '<span class="badge badge-success">Available</span>'}</td>`;
-          html += `<td>${!c.is_sold ? `<button class="btn btn-sm btn-danger" onclick="deleteCred(${c.id})">Xóa</button>` : ''}</td>`;
+          html += `<td style="white-space:nowrap">${!c.is_sold ? `<button class="btn btn-sm btn-primary" onclick="editCred(${c.id}, '${dataAttr}')">Sửa</button> <button class="btn btn-sm btn-danger" onclick="deleteCred(${c.id})">Xóa</button>` : ''}</td>`;
           html += '</tr>';
         }
         html += '</table>';
@@ -981,6 +982,31 @@
         toast(res.message);
         closeModal('bulkModal');
         document.getElementById('bulkData').value = '';
+        loadCredentials();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function editCred(id, dataB64) {
+      const data = JSON.parse(decodeURIComponent(escape(atob(dataB64))));
+      const row = document.getElementById(`cred-row-${id}`);
+      const cells = row.querySelectorAll('.cred-val');
+      cells.forEach(cell => {
+        const key = cell.dataset.key;
+        const val = data[key] || '';
+        cell.innerHTML = `<input type="text" value="${val.replace(/"/g, '&quot;')}" data-key="${key}" style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px">`;
+      });
+      const actionsCell = row.querySelector('td:last-child');
+      actionsCell.innerHTML = `<button class="btn btn-sm btn-success" onclick="saveEditCred(${id})">Lưu</button> <button class="btn btn-sm" style="background:var(--bg-hover);color:var(--text-primary)" onclick="loadCredentials()">Hủy</button>`;
+    }
+
+    async function saveEditCred(id) {
+      const row = document.getElementById(`cred-row-${id}`);
+      const inputs = row.querySelectorAll('input[data-key]');
+      const data = {};
+      inputs.forEach(inp => { data[inp.dataset.key] = inp.value; });
+      try {
+        await apiFetch(`/credentials/${id}`, { method: 'PUT', body: { data } });
+        toast('Đã cập nhật credential');
         loadCredentials();
       } catch (e) { toast(e.message, 'error'); }
     }
