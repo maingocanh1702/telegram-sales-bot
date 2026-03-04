@@ -90,6 +90,7 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
         text += `📌 **Thông tin thanh toán:**\n`;
         text += `• Ngân hàng: **${bank.name}**\n`;
         text += `• Số tài khoản: **${bank.accountNo}**\n`;
+        text += `• Chủ TK: **${bank.accountName}**\n`;
         text += `• Nội dung CK: **${orderCode}**\n\n`;
         text += `👇 Quét mã QR bên dưới để thanh toán:`;
 
