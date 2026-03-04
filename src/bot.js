@@ -28,9 +28,9 @@ async function main() {
 
     let bot;
     if (isProduction) {
-        // Webhook mode — no polling, no 409 conflicts
-        bot = new TelegramBot(config.botToken, { polling: false });
-        console.log('🤖 Bot created in WEBHOOK mode (production)');
+        // Create bot WITHOUT any options — prevents library from calling deleteWebhook
+        bot = new TelegramBot(config.botToken);
+        console.log('🤖 Bot created in WEBHOOK mode (production) — no library options');
     } else {
         // Polling mode — for local development
         bot = new TelegramBot(config.botToken, { polling: true });
@@ -65,19 +65,52 @@ async function main() {
     // Setup admin API
     setupAdminAPI(app, bot);
 
+    // Helper: set webhook via native fetch (avoids library interference)
+    async function setTelegramWebhook() {
+        const telegramWebhookUrl = `${publicUrl}/telegram-webhook/${config.botToken}`;
+        const apiUrl = `https://api.telegram.org/bot${config.botToken}/setWebhook`;
+        try {
+            const resp = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: telegramWebhookUrl }),
+            });
+            const data = await resp.json();
+            console.log(`📡 setWebhook result:`, JSON.stringify(data));
+            return data.ok;
+        } catch (err) {
+            console.error('❌ Failed to set Telegram webhook:', err.message);
+            return false;
+        }
+    }
+
+    // Helper: check webhook status via native fetch
+    async function checkWebhookHealth() {
+        try {
+            const resp = await fetch(`https://api.telegram.org/bot${config.botToken}/getWebhookInfo`);
+            const data = await resp.json();
+            if (!data.result.url) {
+                console.log('⚠️ Webhook URL is empty! Re-setting...');
+                await setTelegramWebhook();
+            }
+        } catch (err) {
+            console.error('❌ Webhook health check failed:', err.message);
+        }
+    }
+
     // Start Express server
     app.listen(config.port, async () => {
         console.log(`🌐 Express server running on port ${config.port}`);
 
         // Set Telegram webhook after server is listening (production only)
         if (isProduction) {
-            const telegramWebhookUrl = `${publicUrl}/telegram-webhook/${config.botToken}`;
-            try {
-                await bot.setWebHook(telegramWebhookUrl);
-                console.log(`📡 Telegram webhook set: ${publicUrl}/telegram-webhook/***`);
-            } catch (err) {
-                console.error('❌ Failed to set Telegram webhook:', err.message);
-            }
+            // Wait 5 seconds for old deployment to fully stop
+            console.log('⏳ Waiting 5s before setting webhook...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            await setTelegramWebhook();
+
+            // Periodic webhook health check every 60 seconds
+            setInterval(checkWebhookHealth, 60000);
         }
     });
 
