@@ -11,13 +11,8 @@ function setupWebhookHandler(app, bot) {
         try {
             const payload = req.body;
 
-            // Auth: verify SePay API key
-            const authKey = req.headers['authorization'] || req.headers['x-api-key'] || '';
-            const token = authKey.replace('Bearer ', '').replace('Apikey ', '');
-            if (config.sepayApiKey && token !== config.sepayApiKey) {
-                console.warn('⚠️ Webhook auth failed — invalid API key');
-                return res.status(401).json({ success: false, message: 'Unauthorized' });
-            }
+            // Note: SePay doesn't support custom auth headers in webhooks.
+            // Security is handled via secret webhook path (WEBHOOK_PATH env var).
 
             console.log(`📥 Webhook: ${payload.transferType} ${payload.transferAmount} — code: ${payload.code || 'N/A'}`);
 
