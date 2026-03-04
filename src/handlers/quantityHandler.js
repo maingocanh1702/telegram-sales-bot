@@ -26,14 +26,22 @@ function setupQuantityHandler(bot) {
             const quantity = parseInt(parts[2]);
             bot.answerCallbackQuery(query.id);
 
-            bot.emit('quantity_selected', {
+            const product = db.getProductById(productId);
+            const eventData = {
                 chatId: query.message.chat.id,
                 messageId: query.message.message_id,
                 userId: query.from.id,
                 username: query.from.username || query.from.first_name,
                 productId,
                 quantity,
-            });
+            };
+
+            // Invite products need email first
+            if (product && product.product_type === 'invite') {
+                bot.emit('email_needed', eventData);
+            } else {
+                bot.emit('quantity_selected', eventData);
+            }
             return;
         }
 
@@ -61,14 +69,21 @@ function setupQuantityHandler(bot) {
             return;
         }
 
-        bot.emit('quantity_selected', {
+        const product = db.getProductById(productId);
+        const eventData = {
             chatId: msg.chat.id,
             messageId: null,
             userId: msg.from.id,
             username: msg.from.username || msg.from.first_name,
             productId,
             quantity,
-        });
+        };
+
+        if (product && product.product_type === 'invite') {
+            bot.emit('email_needed', eventData);
+        } else {
+            bot.emit('quantity_selected', eventData);
+        }
     });
 }
 

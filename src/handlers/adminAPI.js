@@ -57,11 +57,11 @@ function setupAdminAPI(app, bot) {
 
     app.post('/api/admin/products', (req, res) => {
         try {
-            const { name, price, description, note, categoryId, credentialFields } = req.body;
+            const { name, price, description, note, categoryId, credentialFields, productType, inviteSlots } = req.body;
             if (!name || !price) {
                 return res.status(400).json({ error: true, message: 'Name and price required', code: 'VALIDATION_ERROR' });
             }
-            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null);
+            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0);
             res.json({ id, message: 'Product added' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
@@ -78,6 +78,8 @@ function setupAdminAPI(app, bot) {
             if (note !== undefined) updates.note = note;
             if (is_active !== undefined) updates.is_active = is_active ? 1 : 0;
             if (req.body.credentialFields !== undefined) updates.credential_fields = JSON.stringify(req.body.credentialFields);
+            if (req.body.productType !== undefined) updates.product_type = req.body.productType;
+            if (req.body.inviteSlots !== undefined) updates.invite_slots = parseInt(req.body.inviteSlots);
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {
