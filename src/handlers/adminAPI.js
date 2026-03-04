@@ -90,8 +90,8 @@ function setupAdminAPI(app, bot) {
 
     app.delete('/api/admin/products/:id', (req, res) => {
         try {
-            db.deleteProduct(parseInt(req.params.id));
-            res.json({ message: 'Product deleted' });
+            const result = db.deleteProduct(parseInt(req.params.id));
+            res.json(result);
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }

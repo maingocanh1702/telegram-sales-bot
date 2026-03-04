@@ -248,8 +248,25 @@ function updateProduct(id, updates) {
 }
 
 function deleteProduct(id) {
-    db.run('UPDATE products SET is_active = 0 WHERE id = ?', [id]);
-    saveDatabase();
+    // Check if product has any orders
+    const stmt = db.prepare('SELECT COUNT(*) as cnt FROM orders WHERE product_id = ?');
+    stmt.bind([id]);
+    stmt.step();
+    const orderCount = stmt.getAsObject().cnt;
+    stmt.free();
+
+    if (orderCount > 0) {
+        // Has orders — soft delete only (preserve history)
+        db.run('UPDATE products SET is_active = 0 WHERE id = ?', [id]);
+        saveDatabase();
+        return { action: 'deactivated', orderCount };
+    } else {
+        // No orders — hard delete product + credentials
+        db.run('DELETE FROM credentials WHERE product_id = ?', [id]);
+        db.run('DELETE FROM products WHERE id = ?', [id]);
+        saveDatabase();
+        return { action: 'deleted' };
+    }
 }
 
 // ==================== Credentials ====================
@@ -394,7 +411,7 @@ function getAllProductsStock() {
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1) as sold,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id) as total
     FROM products p
-    ORDER BY p.name
+    ORDER BY p.is_active DESC, p.name
   `);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
