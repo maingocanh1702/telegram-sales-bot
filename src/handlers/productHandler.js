@@ -53,14 +53,14 @@ function showProductList(bot, chatId, messageId = null) {
         return;
     }
 
-    let text = '🛍️ **DANH SÁCH SẢN PHẨM**\n\n';
-    text += '👇 Chọn sản phẩm để xem chi tiết:';
+    let text = 'Chọn sản phẩm:';
 
     const keyboard = [];
 
     for (const p of products) {
+        const icon = p.stock > 0 ? '✅' : '❌';
         keyboard.push([{
-            text: `📦 ${p.name} - ${formatPrice(p.price)} [${p.stock}]`,
+            text: `${icon} ${p.name} - ${formatPrice(p.price)} (${p.stock})`,
             callback_data: `product_${p.id}`,
         }]);
     }
