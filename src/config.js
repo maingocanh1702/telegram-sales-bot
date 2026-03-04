@@ -34,6 +34,9 @@ const config = {
   sepayApiKey: process.env.SEPAY_API_KEY,
   sepayVaName: process.env.SEPAY_VA_NAME || '',
 
+  // Admin Panel
+  adminApiKey: process.env.ADMIN_API_KEY || process.env.SEPAY_API_KEY,
+
   // Server
   port: parseInt(process.env.PORT) || 3000,
   webhookPath: process.env.WEBHOOK_PATH || '/webhook/sepay',
