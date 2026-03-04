@@ -26,6 +26,15 @@ function checkExpiredOrders(bot) {
 
         for (const order of expiredOrders) {
             db.updateOrderStatus(order.order_code, 'expired');
+
+            // Restore invite slots if this was an invite product
+            const product = db.getProductById(order.product_id);
+            if (product && product.product_type === 'invite') {
+                const d = db.getDb();
+                d.run('UPDATE products SET invite_slots = invite_slots + ? WHERE id = ?', [order.quantity, order.product_id]);
+                db.saveDatabase();
+            }
+
             console.log(`⏰ Order ${order.order_code} expired`);
 
             bot.sendMessage(order.telegram_user_id,

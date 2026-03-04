@@ -9,12 +9,14 @@ const db = require('./database');
 const { setupMenuHandler } = require('./handlers/menuHandler');
 const { setupProductHandler } = require('./handlers/productHandler');
 const { setupQuantityHandler } = require('./handlers/quantityHandler');
+const { setupEmailHandler } = require('./handlers/emailHandler');
 const { setupOrderHandler } = require('./handlers/orderHandler');
 const { setupWebhookHandler } = require('./handlers/webhookHandler');
 const { setupAdminHandler } = require('./handlers/adminHandler');
 const { setupAdminAPI } = require('./handlers/adminAPI');
 const { setupProfileHandler } = require('./handlers/profileHandler');
 const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler');
+const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
 
 async function main() {
@@ -129,7 +131,9 @@ async function main() {
     setupMenuHandler(bot);
     setupProductHandler(bot);
     setupQuantityHandler(bot);
+    setupEmailHandler(bot);
     setupOrderHandler(bot);
+    setupInviteConfirmHandler(bot);
     setupProfileHandler(bot);
     setupHelpHandler(bot);
     setupGuideCallback(bot);

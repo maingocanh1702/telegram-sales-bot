@@ -56,7 +56,9 @@ async function initDatabase() {
       price INTEGER NOT NULL,
       description TEXT DEFAULT '',
       note TEXT DEFAULT '',
+      product_type TEXT DEFAULT 'credential',
       credential_fields TEXT DEFAULT '[{"key":"username","label":"Tài khoản","icon":"👤"},{"key":"password","label":"Mật khẩu","icon":"🔑"}]',
+      invite_slots INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -88,6 +90,7 @@ async function initDatabase() {
       unit_price INTEGER NOT NULL,
       total_amount INTEGER NOT NULL,
       status TEXT DEFAULT 'pending',
+      customer_email TEXT,
       payment_code TEXT,
       qr_url TEXT,
       expires_at TEXT,
@@ -158,14 +161,19 @@ function addCategory(name, emoji = '📦') {
 function getProducts() {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE CAST(p.is_active AS INTEGER) = 1
     ORDER BY c.sort_order, p.name
   `);
     const results = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        // For invite products, stock = invite_slots; for credential, stock = credential count
+        row.stock = row.product_type === 'invite' ? (row.invite_slots || 0) : row.credential_stock;
+        results.push(row);
+    }
     stmt.free();
     return results;
 }
@@ -173,26 +181,29 @@ function getProducts() {
 function getProductById(id) {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.id = ?
   `);
     stmt.bind([id]);
     let result = null;
-    if (stmt.step()) result = stmt.getAsObject();
+    if (stmt.step()) {
+        result = stmt.getAsObject();
+        result.stock = result.product_type === 'invite' ? (result.invite_slots || 0) : result.credential_stock;
+    }
     stmt.free();
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields]
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
@@ -260,12 +271,12 @@ function generateOrderCode() {
     return `ORD${timestamp}${random}`;
 }
 
-function createOrder({ telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, qrUrl, expiresAt }) {
+function createOrder({ telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, qrUrl, expiresAt, customerEmail }) {
     const orderCode = generateOrderCode();
     db.run(
-        `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount, payment_code, qr_url, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [orderCode, telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, orderCode, qrUrl, expiresAt]
+        `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount, payment_code, qr_url, expires_at, customer_email)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderCode, telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, orderCode, qrUrl, expiresAt, customerEmail || null]
     );
     saveDatabase();
     return orderCode;

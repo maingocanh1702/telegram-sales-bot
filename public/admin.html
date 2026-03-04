@@ -684,6 +684,18 @@
       <div class="form-group"><label>Mô tả</label><input id="pDesc" placeholder="Mô tả ngắn"></div>
       <div class="form-group"><label>Ghi chú</label><input id="pNote" placeholder="Lưu ý cho khách"></div>
       <div class="form-group">
+        <label>Loại sản phẩm</label>
+        <select id="pType" onchange="toggleProductTypeFields()">
+          <option value="credential">🔑 Credential (giao tài khoản tự động)</option>
+          <option value="invite">📧 Invite (gửi invite qua email)</option>
+        </select>
+      </div>
+      <div id="inviteSlotsGroup" class="form-group" style="display:none">
+        <label>Số slots khả dụng</label>
+        <input type="number" id="pInviteSlots" placeholder="5" min="0">
+        <p class="hint">Số lượng invite còn trống (VD: YouTube Family max 5)</p>
+      </div>
+      <div id="credentialFieldsGroup" class="form-group">
         <label>Trường thông tin credential</label>
         <div id="fieldBuilder"></div>
         <button class="btn btn-sm btn-ghost" onclick="addFieldRow()" style="margin-top:8px">+ Thêm trường</button>
@@ -873,6 +885,12 @@
       document.getElementById('pDesc').value = product ? (product.description || '') : '';
       document.getElementById('pNote').value = product ? (product.note || '') : '';
 
+      // Product type
+      const pType = product ? (product.product_type || 'credential') : 'credential';
+      document.getElementById('pType').value = pType;
+      document.getElementById('pInviteSlots').value = product ? (product.invite_slots || 0) : '';
+      toggleProductTypeFields();
+
       // Populate field builder
       const container = document.getElementById('fieldBuilder');
       container.innerHTML = '';
@@ -892,15 +910,24 @@
       if (p) openProductModal(p);
     }
 
+    function toggleProductTypeFields() {
+      const type = document.getElementById('pType').value;
+      document.getElementById('inviteSlotsGroup').style.display = type === 'invite' ? '' : 'none';
+      document.getElementById('credentialFieldsGroup').style.display = type === 'credential' ? '' : 'none';
+    }
+
     async function saveProduct() {
       const id = document.getElementById('editProductId').value;
+      const productType = document.getElementById('pType').value;
       const credentialFields = getFieldsFromBuilder();
       const body = {
         name: document.getElementById('pName').value,
         price: document.getElementById('pPrice').value,
         description: document.getElementById('pDesc').value,
         note: document.getElementById('pNote').value,
-        credentialFields,
+        productType,
+        credentialFields: productType === 'credential' ? credentialFields : undefined,
+        inviteSlots: productType === 'invite' ? (document.getElementById('pInviteSlots').value || 0) : undefined,
       };
       try {
         if (id) {
