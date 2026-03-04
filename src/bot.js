@@ -107,7 +107,8 @@ async function main() {
     process.on('SIGINT', () => {
         console.log('\n🛑 Shutting down...');
         if (!isProduction) bot.stopPolling();
-        if (isProduction) bot.deleteWebHook();
+        // Do NOT call deleteWebHook here — on Railway, old deployment's SIGTERM
+        // runs AFTER new deployment sets webhook, causing it to be deleted
         db.saveDatabase();
         process.exit(0);
     });
@@ -115,7 +116,6 @@ async function main() {
     process.on('SIGTERM', () => {
         console.log('\n🛑 Shutting down...');
         if (!isProduction) bot.stopPolling();
-        if (isProduction) bot.deleteWebHook();
         db.saveDatabase();
         process.exit(0);
     });
