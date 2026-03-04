@@ -57,11 +57,12 @@ function setupAdminAPI(app, bot) {
 
     app.post('/api/admin/products', (req, res) => {
         try {
-            const { name, price, description, note, categoryId, credentialFields, productType, inviteSlots, deliveryHours } = req.body;
+            const { name, price, description, note, categoryId, credentialFields, productType, inviteSlots, deliveryHours, subscriptionDays } = req.body;
             if (!name || !price) {
                 return res.status(400).json({ error: true, message: 'Name and price required', code: 'VALIDATION_ERROR' });
             }
-            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24);
+            const subDays = subscriptionDays ? parseInt(subscriptionDays) : null;
+            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays);
             res.json({ id, message: 'Product added' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
@@ -81,6 +82,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.productType !== undefined) updates.product_type = req.body.productType;
             if (req.body.inviteSlots !== undefined) updates.invite_slots = parseInt(req.body.inviteSlots);
             if (req.body.deliveryHours !== undefined) updates.delivery_hours = parseInt(req.body.deliveryHours);
+            if (req.body.subscriptionDays !== undefined) updates.subscription_days = req.body.subscriptionDays ? parseInt(req.body.subscriptionDays) : null;
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {
@@ -292,6 +294,39 @@ function setupAdminAPI(app, bot) {
         try {
             db.deleteBankAccount(parseInt(req.params.id));
             res.json({ message: 'Đã xóa tài khoản' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // ==================== Broadcast ====================
+
+    app.post('/api/admin/broadcast', async (req, res) => {
+        try {
+            const { message } = req.body;
+            if (!message || !message.trim()) {
+                return res.status(400).json({ error: true, message: 'Message required', code: 'VALIDATION_ERROR' });
+            }
+
+            const customers = db.getUniqueCustomerIds();
+            let sent = 0;
+            let failed = 0;
+
+            const text = `📢 **THÔNG BÁO TỪ ADMIN**\n\n${message.trim()}\n\n/menu để mua hàng`;
+
+            for (const c of customers) {
+                try {
+                    await bot.sendMessage(c.telegram_user_id, text, { parse_mode: 'Markdown' });
+                    sent++;
+                    // Rate limit: 30 messages/sec max for Telegram
+                    await new Promise(r => setTimeout(r, 50));
+                } catch (e) {
+                    failed++;
+                    console.error(`Broadcast failed for ${c.telegram_user_id}:`, e.message);
+                }
+            }
+
+            res.json({ message: `Đã gửi ${sent}/${customers.length} khách`, sent, failed, total: customers.length });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }

@@ -564,6 +564,9 @@
         <a onclick="showSection('settings')">
           <span class="material-symbols-rounded">settings</span> Cài đặt
         </a>
+        <a onclick="showSection('broadcast')">
+          <span class="material-symbols-rounded">campaign</span> Thông báo
+        </a>
       </nav>
     </aside>
 
@@ -652,6 +655,31 @@
         </div>
       </div>
 
+      <div class="section" id="sec-broadcast">
+        <div class="page-header">
+          <h1>📢 Thông báo</h1>
+          <p>Gửi thông báo đến tất cả khách hàng đã mua hàng qua bot</p>
+        </div>
+        <div class="card" style="padding:24px">
+          <div class="form-group">
+            <label>Nội dung thông báo</label>
+            <textarea id="broadcastMessage" rows="5" placeholder="Nhập nội dung thông báo...
+VD: STOCK
+Gemini Pro Pixel 12 Tháng
+GIÁ: 50K
+
+Số Lượng Đang Hiện Có 10"
+              style="width:100%;padding:12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-size:14px;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <button class="btn btn-primary" onclick="sendBroadcast()">
+              <span class="material-symbols-rounded" style="font-size:16px">send</span> Gửi thông báo
+            </button>
+            <span id="broadcastResult" style="font-size:13px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>
+
       <div class="section" id="sec-settings">
         <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
           <div>
@@ -720,6 +748,12 @@
         <label>Thời gian giao hàng (giờ)</label>
         <input type="number" id="pDeliveryHours" placeholder="24" min="1" value="24">
         <p class="hint">Hẹn giao trong bao nhiêu giờ sau thanh toán</p>
+      </div>
+      <div class="form-group">
+        <label>Thời hạn sử dụng (ngày)</label>
+        <input type="number" id="pSubscriptionDays" placeholder="365" min="0">
+        <p class="hint">Để trống nếu SP không có thời hạn. VD: 365 = 1 năm, 30 = 1 tháng. Bot sẽ nhắc trước 7 ngày khi
+          hết hạn.</p>
       </div>
       <div id="credentialFieldsGroup" class="form-group">
         <label>Trường thông tin credential</label>
@@ -862,13 +896,14 @@
         for (const p of productsCache) {
           let typeInfo = '';
           const pType = p.product_type || 'credential';
+          const subInfo = p.subscription_days ? ` · ${p.subscription_days}d` : '';
           if (pType === 'credential') {
             const fields = JSON.parse(p.credential_fields || '[]');
-            typeInfo = `🔑 ${fields.map(f => f.label).join(', ')}`;
+            typeInfo = `🔑 ${fields.map(f => f.label).join(', ')}${subInfo}`;
           } else if (pType === 'invite') {
-            typeInfo = `📧 Invite · ${p.invite_slots || 0} slots`;
+            typeInfo = `📧 Invite · ${p.invite_slots || 0} slots${subInfo}`;
           } else if (pType === 'preorder') {
-            typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h`;
+            typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h${subInfo}`;
           }
           html += `<tr>
             <td>${p.id}</td>
@@ -926,6 +961,7 @@
       document.getElementById('pType').value = pType;
       document.getElementById('pInviteSlots').value = product ? (product.invite_slots || 0) : '';
       document.getElementById('pDeliveryHours').value = product ? (product.delivery_hours || 24) : 24;
+      document.getElementById('pSubscriptionDays').value = product ? (product.subscription_days || '') : '';
       toggleProductTypeFields();
 
       // Populate field builder
@@ -967,6 +1003,7 @@
         credentialFields: productType === 'credential' ? credentialFields : undefined,
         inviteSlots: productType === 'invite' ? (document.getElementById('pInviteSlots').value || 0) : undefined,
         deliveryHours: productType === 'preorder' ? (document.getElementById('pDeliveryHours').value || 24) : undefined,
+        subscriptionDays: document.getElementById('pSubscriptionDays').value || null,
       };
       try {
         if (id) {
@@ -1184,6 +1221,20 @@
       }
       html += '</table>';
       document.getElementById(containerId).innerHTML = html;
+    }
+
+    async function sendBroadcast() {
+      const msg = document.getElementById('broadcastMessage').value;
+      if (!msg.trim()) { toast('Nhập nội dung thông báo', 'error'); return; }
+      if (!confirm('Gửi thông báo đến TẤT CẢ khách hàng?')) return;
+      const resultEl = document.getElementById('broadcastResult');
+      resultEl.textContent = '⏳ Đang gửi...';
+      try {
+        const res = await apiFetch('/broadcast', { method: 'POST', body: { message: msg } });
+        resultEl.textContent = `✅ ${res.message}`;
+        toast(`Đã gửi ${res.sent} thông báo`);
+        document.getElementById('broadcastMessage').value = '';
+      } catch (e) { resultEl.textContent = '❌ ' + e.message; toast(e.message, 'error'); }
     }
 
     async function confirmOrder(code) {

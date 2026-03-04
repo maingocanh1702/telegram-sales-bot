@@ -183,6 +183,10 @@ async function deliverCredential(bot, order, product) {
         // Mark as sold and delivered AFTER successful message send
         db.markCredentialsSold(credIds, order.id);
         db.updateOrderStatus(order.order_code, 'delivered');
+        // Set subscription expiry if product has subscription_days
+        if (product && product.subscription_days) {
+            db.setSubscriptionExpiry(order.order_code, product.subscription_days);
+        }
         console.log(`✅ Delivered ${credentials.length} credentials for order ${order.order_code}`);
         return true;
     } catch (err) {
@@ -213,6 +217,11 @@ function setupInviteConfirmHandler(bot) {
 
         // Mark order as delivered
         db.updateOrderStatus(orderCode, 'delivered');
+        // Set subscription expiry
+        const product = db.getProductById(order.product_id);
+        if (product && product.subscription_days) {
+            db.setSubscriptionExpiry(orderCode, product.subscription_days);
+        }
         bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận invite!' });
 
         // Update admin message (remove button)
@@ -263,6 +272,11 @@ function setupInviteConfirmHandler(bot) {
         }
 
         db.updateOrderStatus(orderCode, 'delivered');
+        // Set subscription expiry
+        const product = db.getProductById(order.product_id);
+        if (product && product.subscription_days) {
+            db.setSubscriptionExpiry(orderCode, product.subscription_days);
+        }
         bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận giao hàng!' });
 
         bot.editMessageText(
