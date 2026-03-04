@@ -639,6 +639,14 @@
               <option value="cancelled">❌ Cancelled</option>
               <option value="expired">⏰ Expired</option>
             </select>
+            <label style="font-weight:600;white-space:nowrap">Loại SP:</label>
+            <select id="orderTypeFilter" onchange="loadOrders()"
+              style="padding:8px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);min-width:140px">
+              <option value="">— Tất cả —</option>
+              <option value="credential">🔑 Credential</option>
+              <option value="invite">📧 Invite</option>
+              <option value="preorder">📦 Preorder</option>
+            </select>
           </div>
           <div id="ordersTable"></div>
         </div>
@@ -1123,26 +1131,37 @@
       try {
         let orders = await apiFetch('/orders');
         const statusFilter = document.getElementById('orderStatusFilter').value;
+        const typeFilter = document.getElementById('orderTypeFilter').value;
         if (statusFilter) {
           orders = orders.filter(o => o.status === statusFilter);
+        }
+        if (typeFilter) {
+          orders = orders.filter(o => o.product_type === typeFilter);
         }
         renderOrdersTable(orders, 'ordersTable', true);
       } catch (e) { toast(e.message, 'error'); }
     }
 
     function renderOrdersTable(orders, containerId, showActions = false) {
-      let html = '<table><tr><th>Mã đơn</th><th>Sản phẩm</th><th>SL</th><th>Tổng tiền</th><th>Khách</th><th>Trạng thái</th><th>Thời gian</th>';
+      const colCount = showActions ? 9 : 8;
+      let html = '<table><tr><th>Mã đơn</th><th>Sản phẩm</th><th>Loại</th><th>SL</th><th>Tổng tiền</th><th>Khách / Email</th><th>Trạng thái</th><th>Thời gian</th>';
       if (showActions) html += '<th></th>';
       html += '</tr>';
       if (orders.length === 0) {
-        html += `<tr><td colspan="${showActions ? 8 : 7}"><div class="empty-state"><span class="material-symbols-rounded">receipt_long</span><p>Chưa có đơn hàng</p></div></td></tr>`;
+        html += `<tr><td colspan="${colCount}"><div class="empty-state"><span class="material-symbols-rounded">receipt_long</span><p>Chưa có đơn hàng</p></div></td></tr>`;
       }
       const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivered: 'badge-success', cancelled: 'badge-danger', expired: 'badge-muted' };
+      const typeIcons = { credential: '🔑', invite: '📧', preorder: '📦' };
       for (const o of orders) {
+        const typeIcon = typeIcons[o.product_type] || '🔑';
+        const emailInfo = o.customer_email
+          ? `<br><span style="font-size:11px;color:var(--primary)">${o.customer_email}</span>`
+          : '';
         html += `<tr>
-          <td><code>${o.order_code}</code></td><td>${o.product_name}</td><td>${o.quantity}</td>
+          <td><code>${o.order_code}</code></td><td>${o.product_name}</td>
+          <td><span style="font-size:12px">${typeIcon}</span></td><td>${o.quantity}</td>
           <td class="money">${formatMoney(o.total_amount)}</td>
-          <td>@${o.telegram_username || o.telegram_user_id}</td>
+          <td>@${o.telegram_username || o.telegram_user_id}${emailInfo}</td>
           <td><span class="badge ${statusMap[o.status] || ''}">${o.status}</span></td>
           <td style="font-size:12px;color:var(--text-muted)">${o.created_at}</td>`;
         if (showActions) {
