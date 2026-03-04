@@ -249,6 +249,24 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // ==================== Customers ====================
+
+    app.get('/api/admin/customers', (req, res) => {
+        try {
+            res.json(db.getCustomerStats());
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.get('/api/admin/customers/:id/orders', (req, res) => {
+        try {
+            res.json(db.getCustomerOrders(parseInt(req.params.id)));
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Settings / Bank Accounts ====================
 
     app.get('/api/admin/settings', (req, res) => {
