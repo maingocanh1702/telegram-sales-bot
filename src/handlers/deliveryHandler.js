@@ -234,12 +234,28 @@ function setupInviteConfirmHandler(bot) {
             }
         ).catch(() => { });
 
-        // Notify customer
-        bot.sendMessage(order.telegram_user_id,
-            `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
-            `📧 Đã gửi invite đến: **${order.customer_email}**\n` +
-            `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n\n` +
-            `Cảm ơn bạn đã mua hàng! 🙏`,
+        // Notify customer — message depends on customer_fields config
+        const custFields = product ? JSON.parse(product.customer_fields || '[{"key":"email"}]') : [{ key: 'email' }];
+        const hasPassword = custFields.some(f => f.key === 'password');
+
+        let customerMsg;
+        if (hasPassword) {
+            // Email + password → admin setup the account
+            customerMsg =
+                `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
+                `📦 Sản phẩm **${order.product_name}** đã được thiết lập thành công!\n` +
+                `🎉 Bạn có thể sử dụng ngay.\n\n` +
+                `Cảm ơn bạn đã mua hàng! 🙏`;
+        } else {
+            // Email only → invite sent to customer's email
+            customerMsg =
+                `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
+                `📧 Đã gửi invite đến: **${order.customer_email}**\n` +
+                `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n\n` +
+                `Cảm ơn bạn đã mua hàng! 🙏`;
+        }
+
+        bot.sendMessage(order.telegram_user_id, customerMsg,
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
