@@ -131,4 +131,4 @@ function showProductDetail(bot, chatId, messageId, productId) {
     }).catch(() => { });
 }
 
-module.exports = { setupProductHandler };
+module.exports = { setupProductHandler, showProductList };

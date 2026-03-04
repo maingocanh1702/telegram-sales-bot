@@ -1,4 +1,5 @@
 const config = require('../config');
+const db = require('../database');
 
 /**
  * Format price to Vietnamese format: 15.000 đ
@@ -9,7 +10,6 @@ function formatPrice(price) {
 
 /**
  * Persistent Reply Keyboard layout (bottom of chat)
- * 2 columns, matching the reference screenshot
  */
 const REPLY_KEYBOARD = {
     keyboard: [
@@ -29,42 +29,28 @@ function setupMenuHandler(bot) {
         sendMainMenu(bot, msg.chat.id);
     });
 
-    // Handle Reply Keyboard text buttons
+    // Handle Reply Keyboard text buttons — call functions directly (not simulated callback)
     bot.on('message', (msg) => {
         if (!msg.text) return;
         const chatId = msg.chat.id;
 
         switch (msg.text) {
-            case '🛒 Sản phẩm':
-                // Trigger product listing (same as inline menu_products)
-                bot.emit('callback_query', {
-                    id: Date.now().toString(),
-                    data: 'menu_products',
-                    message: { chat: { id: chatId }, message_id: msg.message_id },
-                    from: msg.from,
-                    _isSimulated: true,
-                });
+            case '🛒 Sản phẩm': {
+                // Import lazily to avoid circular deps
+                const { showProductList } = require('./productHandler');
+                showProductList(bot, chatId); // no messageId → sends new message
                 break;
-            case '👤 Tài khoản':
-                // Trigger profile (same as /profile)
-                bot.emit('callback_query', {
-                    id: Date.now().toString(),
-                    data: '_profile',
-                    message: { chat: { id: chatId }, message_id: msg.message_id },
-                    from: msg.from,
-                    _isSimulated: true,
-                });
+            }
+            case '👤 Tài khoản': {
+                const { showProfile } = require('./profileHandler');
+                showProfile(bot, chatId, msg.from);
                 break;
-            case '📦 Đơn hàng':
-                // Trigger order list (same as inline menu_orders)
-                bot.emit('callback_query', {
-                    id: Date.now().toString(),
-                    data: 'menu_orders',
-                    message: { chat: { id: chatId }, message_id: msg.message_id },
-                    from: msg.from,
-                    _isSimulated: true,
-                });
+            }
+            case '📦 Đơn hàng': {
+                const { showUserOrders } = require('./orderHandler');
+                showUserOrders(bot, chatId, null, msg.from.id); // null messageId → new message
                 break;
+            }
             case '💬 Hỗ trợ':
                 bot.sendMessage(chatId,
                     `💬 **Hỗ trợ**\n\nLiên hệ admin: ${config.supportUsername}\n👉 ${config.supportUrl}`,
@@ -77,7 +63,7 @@ function setupMenuHandler(bot) {
     // Callback: return to main menu
     bot.on('callback_query', (query) => {
         if (query.data === 'menu_main') {
-            if (!query._isSimulated) bot.answerCallbackQuery(query.id);
+            bot.answerCallbackQuery(query.id);
             sendMainMenu(bot, query.message.chat.id, query.message.message_id);
         }
     });
@@ -85,8 +71,8 @@ function setupMenuHandler(bot) {
 
 /**
  * Send the main menu with BOTH:
- * 1. Inline keyboard (in message)
- * 2. Reply keyboard (persistent at bottom)
+ * 1. Reply keyboard (persistent at bottom)
+ * 2. Inline keyboard (in message)
  */
 function sendMainMenu(bot, chatId, editMessageId = null) {
     let text = '🏪 **SHOP TỰ ĐỘNG**\n\n';
@@ -104,7 +90,6 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
     ];
 
     if (editMessageId) {
-        // When editing, can only use inline keyboard
         bot.editMessageText(text, {
             chat_id: chatId,
             message_id: editMessageId,
@@ -112,15 +97,11 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
             reply_markup: { inline_keyboard: inlineKeyboard },
         }).catch(() => { });
     } else {
-        // First message: send with Reply Keyboard to set it persistent
+        // Send with Reply Keyboard to set it persistent
         bot.sendMessage(chatId, text, {
             parse_mode: 'Markdown',
-            reply_markup: {
-                ...REPLY_KEYBOARD,
-                inline_keyboard: undefined,
-            },
+            reply_markup: REPLY_KEYBOARD,
         }).then(() => {
-            // Also send inline buttons as separate message
             bot.sendMessage(chatId, '⬇️ Hoặc chọn nhanh:', {
                 reply_markup: { inline_keyboard: inlineKeyboard },
             });
