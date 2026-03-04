@@ -891,8 +891,10 @@
       const rows = document.querySelectorAll('#fieldBuilder .field-row');
       return Array.from(rows).map(r => {
         const inputs = r.querySelectorAll('input');
-        return { icon: inputs[0].value, key: inputs[1].value, label: inputs[2].value };
-      }).filter(f => f.key && f.label);
+        const key = inputs[1].value.trim();
+        const label = inputs[2].value.trim() || key; // Auto-fill label from key
+        return { icon: inputs[0].value || '📋', key, label };
+      }).filter(f => f.key);
     }
 
     function openProductModal(product = null) {
