@@ -18,6 +18,7 @@ const { setupProfileHandler } = require('./handlers/profileHandler');
 const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler');
 const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
+const { setupScheduler } = require('./scheduler');
 
 async function main() {
     console.log('🚀 Starting Telegram Sales Bot v2.0...');
@@ -134,6 +135,7 @@ async function main() {
     setupEmailHandler(bot);
     setupOrderHandler(bot);
     setupInviteConfirmHandler(bot);
+    setupScheduler(bot);
     setupProfileHandler(bot);
     setupHelpHandler(bot);
     setupGuideCallback(bot);

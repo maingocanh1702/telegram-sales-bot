@@ -60,6 +60,7 @@ async function initDatabase() {
       credential_fields TEXT DEFAULT '[{"key":"username","label":"Tài khoản","icon":"👤"},{"key":"password","label":"Mật khẩu","icon":"🔑"}]',
       invite_slots INTEGER DEFAULT 0,
       delivery_hours INTEGER DEFAULT 24,
+      subscription_days INTEGER,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -132,6 +133,9 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN invite_slots INTEGER DEFAULT 0`,
         `ALTER TABLE products ADD COLUMN delivery_hours INTEGER DEFAULT 24`,
         `ALTER TABLE orders ADD COLUMN customer_email TEXT`,
+        `ALTER TABLE products ADD COLUMN subscription_days INTEGER`,
+        `ALTER TABLE orders ADD COLUMN subscription_expires_at TEXT`,
+        `ALTER TABLE orders ADD COLUMN expiry_reminded INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -221,14 +225,14 @@ function getProductById(id) {
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours]
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
@@ -411,7 +415,7 @@ function getRecentOrders(limit = 20) {
 function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
-           p.product_type, p.invite_slots, p.delivery_hours,
+           p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days,
            CASE p.product_type
              WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
              WHEN 'preorder' THEN 999
@@ -436,6 +440,54 @@ function getAllProductsStock() {
     return results;
 }
 
+function setSubscriptionExpiry(orderCode, subscriptionDays) {
+    if (!subscriptionDays) return;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + subscriptionDays);
+    const expiresStr = expiresAt.toISOString().split('T')[0]; // YYYY-MM-DD
+    db.run('UPDATE orders SET subscription_expires_at = ? WHERE order_code = ?', [expiresStr, orderCode]);
+    saveDatabase();
+}
+
+function getExpiringSubscriptions(daysAhead = 7) {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + daysAhead);
+    const targetStr = targetDate.toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+    const stmt = db.prepare(`
+      SELECT o.*, p.product_type, p.subscription_days
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      WHERE o.subscription_expires_at IS NOT NULL
+        AND o.subscription_expires_at <= ?
+        AND o.subscription_expires_at >= ?
+        AND o.status = 'delivered'
+        AND COALESCE(o.expiry_reminded, 0) = 0
+    `);
+    stmt.bind([targetStr, todayStr]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function markExpiryReminded(orderId) {
+    db.run('UPDATE orders SET expiry_reminded = 1 WHERE id = ?', [orderId]);
+    saveDatabase();
+}
+
+function getUniqueCustomerIds() {
+    const stmt = db.prepare(`
+      SELECT DISTINCT telegram_user_id, telegram_username 
+      FROM orders 
+      WHERE status IN ('paid', 'delivered')
+    `);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
 module.exports = {
     initDatabase,
     saveDatabase,
@@ -449,6 +501,7 @@ module.exports = {
     addProduct,
     updateProduct,
     deleteProduct,
+    getUniqueCustomerIds,
     // Credentials
     getAvailableCredentials,
     getStockCount,
@@ -465,6 +518,9 @@ module.exports = {
     updateOrderStatus,
     getExpiredOrders,
     getRecentOrders,
+    getExpiringSubscriptions,
+    markExpiryReminded,
+    setSubscriptionExpiry,
     getAllProductsStock,
     // Settings
     getSetting,
