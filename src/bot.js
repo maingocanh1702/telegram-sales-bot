@@ -61,6 +61,24 @@ async function main() {
         res.json({ status: 'ok', bot: 'Telegram Sales Bot', version: '2.0.0' });
     });
 
+    // Debug endpoint (temporary)
+    app.get('/debug/products', (req, res) => {
+        try {
+            const d = db.getDb();
+            const raw = d.exec('SELECT id, name, is_active, typeof(is_active) as type_active FROM products');
+            const castQuery = d.exec('SELECT id, name, is_active FROM products WHERE CAST(is_active AS INTEGER) = 1');
+            const botProducts = db.getProducts();
+            res.json({
+                raw_products: raw,
+                cast_query: castQuery,
+                bot_getProducts: botProducts,
+                bot_count: botProducts.length,
+            });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     // Serve static files (admin panel)
     app.use(express.static(path.join(__dirname, '..', 'public')));
 
