@@ -208,4 +208,4 @@ function showUserOrders(bot, chatId, messageId, userId) {
     }
 }
 
-module.exports = { setupOrderHandler };
+module.exports = { setupOrderHandler, showUserOrders };
