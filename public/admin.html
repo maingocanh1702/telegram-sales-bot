@@ -1255,12 +1255,15 @@ Số Lượng Đang Hiện Có 10"
           <td class="money">${formatMoney(o.total_amount)}</td>
           <td>@${o.telegram_username || o.telegram_user_id}${emailInfo}</td>
           <td><span class="badge ${statusMap[o.status] || ''}">${o.status}</span></td>
-          <td style="font-size:12px;color:var(--text-muted)">${o.created_at}</td>`;
+          <td style="font-size:12px;color:var(--text-muted)">${o.created_at}${o.subscription_expires_at ? `<br><span style="color:var(--primary)">⏰ ${o.subscription_expires_at}</span>` : ''}</td>`;
         if (showActions) {
           html += '<td>';
           if (o.status === 'pending') {
             html += `<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.order_code}')">✅</button> `;
             html += `<button class="btn btn-sm btn-danger" onclick="cancelOrder('${o.order_code}')">❌</button>`;
+          }
+          if (o.status === 'delivered') {
+            html += `<button class="btn btn-sm" onclick="setOrderExpiry('${o.order_code}')" title="Set thời hạn" style="background:var(--bg-card);border:1px solid var(--border)">⏰</button>`;
           }
           html += '</td>';
         }
@@ -1282,6 +1285,16 @@ Số Lượng Đang Hiện Có 10"
         toast(`Đã gửi ${res.sent} thông báo`);
         document.getElementById('broadcastMessage').value = '';
       } catch (e) { resultEl.textContent = '❌ ' + e.message; toast(e.message, 'error'); }
+    }
+
+    async function setOrderExpiry(code) {
+      const days = prompt('Nhập số ngày còn lại (VD: 363):');
+      if (!days || isNaN(days) || parseInt(days) <= 0) return;
+      try {
+        const res = await apiFetch(`/orders/${code}/set-expiry`, { method: 'POST', body: { days: parseInt(days) } });
+        toast(res.message);
+        loadOrders();
+      } catch (e) { toast(e.message, 'error'); }
     }
 
     async function confirmOrder(code) {

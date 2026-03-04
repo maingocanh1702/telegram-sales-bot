@@ -229,6 +229,26 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    app.post('/api/admin/orders/:code/set-expiry', (req, res) => {
+        try {
+            const order = db.getOrderByCode(req.params.code);
+            if (!order) {
+                return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
+            }
+            const { days } = req.body;
+            if (!days || days <= 0) {
+                return res.status(400).json({ error: true, message: 'Days must be > 0', code: 'VALIDATION_ERROR' });
+            }
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + parseInt(days));
+            const expiresStr = expiresAt.toISOString().split('T')[0];
+            db.setOrderExpiryDate(req.params.code, expiresStr);
+            res.json({ message: `Đã set hết hạn: ${expiresStr}`, expiresAt: expiresStr });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Settings / Bank Accounts ====================
 
     app.get('/api/admin/settings', (req, res) => {
