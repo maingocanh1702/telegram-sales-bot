@@ -116,7 +116,7 @@ function getDb() {
 // ==================== Categories ====================
 
 function getCategories() {
-    const stmt = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order');
+    const stmt = db.prepare('SELECT * FROM categories WHERE CAST(is_active AS INTEGER) = 1 ORDER BY sort_order');
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
@@ -135,10 +135,10 @@ function addCategory(name, emoji = '📦') {
 function getProducts() {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 0) as stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.is_active = 1
+    WHERE CAST(p.is_active AS INTEGER) = 1
     ORDER BY c.sort_order, p.name
   `);
     const results = [];
@@ -150,7 +150,7 @@ function getProducts() {
 function getProductById(id) {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 0) as stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.id = ?
@@ -196,7 +196,7 @@ function deleteProduct(id) {
 // ==================== Credentials ====================
 
 function getAvailableCredentials(productId, limit = 1) {
-    const stmt = db.prepare('SELECT * FROM credentials WHERE product_id = ? AND is_sold = 0 LIMIT ?');
+    const stmt = db.prepare('SELECT * FROM credentials WHERE product_id = ? AND CAST(is_sold AS INTEGER) = 0 LIMIT ?');
     stmt.bind([productId, limit]);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
@@ -205,7 +205,7 @@ function getAvailableCredentials(productId, limit = 1) {
 }
 
 function getStockCount(productId) {
-    const result = db.exec('SELECT COUNT(*) FROM credentials WHERE product_id = ? AND is_sold = 0', [productId]);
+    const result = db.exec('SELECT COUNT(*) FROM credentials WHERE product_id = ? AND CAST(is_sold AS INTEGER) = 0', [productId]);
     return result.length > 0 ? result[0].values[0][0] : 0;
 }
 
@@ -330,8 +330,8 @@ function getRecentOrders(limit = 20) {
 function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 0) as available,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 1) as sold,
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as available,
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1) as sold,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id) as total
     FROM products p
     ORDER BY p.name
