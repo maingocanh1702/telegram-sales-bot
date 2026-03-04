@@ -1,4 +1,4 @@
-const db = require('../database');
+const config = require('../config');
 
 /**
  * Format price to Vietnamese format: 15.000 đ
@@ -26,44 +26,29 @@ function setupMenuHandler(bot) {
 }
 
 /**
- * Send the main menu with product buttons and navigation
+ * Send the main menu with navigation buttons
+ * Layout:
+ *   Row 1: 🛍 Sản phẩm  |  📦 Đơn hàng
+ *   Row 2: 💬 Hỗ trợ (URL → @maingocanh)
  */
 function sendMainMenu(bot, chatId, editMessageId = null) {
-    const products = db.getProducts();
+    let text = '🏪 **SHOP TỰ ĐỘNG**\n\n';
+    text += '👋 Chào mừng bạn đến với shop!\n';
+    text += 'Chọn chức năng bên dưới để bắt đầu:';
 
-    let text = '🏪 **MENU CHÍNH**\n\n';
-    text += '👇 Chọn sản phẩm hoặc chức năng bên dưới:';
-
-    const keyboard = [];
-
-    // Product buttons (2 per row)
-    const productButtons = products.map((p) => ({
-        text: `📦 ${p.name} [${p.stock}]`,
-        callback_data: `product_${p.id}`,
-    }));
-
-    for (let i = 0; i < productButtons.length; i += 2) {
-        const row = [productButtons[i]];
-        if (productButtons[i + 1]) {
-            row.push(productButtons[i + 1]);
-        }
-        keyboard.push(row);
-    }
-
-    // Navigation buttons
-    keyboard.push([
-        { text: '🛒 Mua hàng', callback_data: 'menu_products' },
-        { text: '📋 Lịch sử mua hàng', callback_data: 'menu_orders' },
-    ]);
-    keyboard.push([
-        { text: '💬 Hỗ trợ', callback_data: 'menu_support' },
-    ]);
+    const keyboard = [
+        [
+            { text: '🛍 Sản phẩm', callback_data: 'menu_products' },
+            { text: '📦 Đơn hàng', callback_data: 'menu_orders' },
+        ],
+        [
+            { text: '💬 Hỗ trợ', url: config.supportUrl },
+        ],
+    ];
 
     const options = {
         parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: keyboard,
-        },
+        reply_markup: { inline_keyboard: keyboard },
     };
 
     if (editMessageId) {
@@ -71,9 +56,7 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
             chat_id: chatId,
             message_id: editMessageId,
             ...options,
-        }).catch(() => {
-            // Message unchanged, ignore
-        });
+        }).catch(() => { });
     } else {
         bot.sendMessage(chatId, text, options);
     }

@@ -1,23 +1,17 @@
 const path = require('path');
 const fs = require('fs');
 
-// Load env vars from file (priority order):
-// 1. .env (local dev)
-// 2. .env.railway (production workaround)
-// 3. System env vars (Railway injected)
-const projectEnv = path.join(__dirname, '..', '.env');
-const railwayEnv = path.join(__dirname, '..', '.env.railway');
-const fallbackEnv = '/tmp/telegram-sales-bot/.env';
+// Load env vars (priority: .env > .env.railway > /tmp fallback > system env)
+const envPaths = [
+  path.join(__dirname, '..', '.env'),
+  path.join(__dirname, '..', '.env.railway'),
+  '/tmp/telegram-sales-bot/.env',
+];
 
-if (fs.existsSync(projectEnv)) {
-  console.log('📄 Loading .env from:', projectEnv);
-  require('dotenv').config({ path: projectEnv });
-} else if (fs.existsSync(railwayEnv)) {
-  console.log('📄 Loading .env.railway from:', railwayEnv);
-  require('dotenv').config({ path: railwayEnv });
-} else if (fs.existsSync(fallbackEnv)) {
-  console.log('📄 Loading .env from:', fallbackEnv);
-  require('dotenv').config({ path: fallbackEnv });
+const envFile = envPaths.find((p) => fs.existsSync(p));
+if (envFile) {
+  console.log(`📄 Loading env from: ${envFile}`);
+  require('dotenv').config({ path: envFile });
 } else {
   console.log('ℹ️  No .env file found, using system environment variables');
 }
@@ -45,6 +39,28 @@ const config = {
 
   // Order settings
   orderExpiryMinutes: parseInt(process.env.ORDER_EXPIRY_MINUTES) || 5,
+
+  // Support
+  supportUsername: '@maingocanh',
+  supportUrl: 'https://t.me/maingocanh',
 };
 
+// Startup validation
+function validateConfig() {
+  const required = [
+    ['BOT_TOKEN', config.botToken],
+    ['ADMIN_TELEGRAM_ID', config.adminTelegramId],
+    ['BANK_CODE', config.bank.code],
+    ['BANK_ACCOUNT_NO', config.bank.accountNo],
+  ];
+
+  const missing = required.filter(([, val]) => !val).map(([name]) => name);
+  if (missing.length > 0) {
+    console.error(`❌ Missing required env vars: ${missing.join(', ')}`);
+    console.error('   Copy .env.example → .env and fill in values');
+    process.exit(1);
+  }
+}
+
 module.exports = config;
+module.exports.validateConfig = validateConfig;

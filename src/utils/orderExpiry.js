@@ -21,29 +21,32 @@ function startOrderExpiryCheck(bot) {
  * Check and auto-cancel expired orders
  */
 function checkExpiredOrders(bot) {
-    const expiredOrders = db.getExpiredOrders();
+    try {
+        const expiredOrders = db.getExpiredOrders();
 
-    for (const order of expiredOrders) {
-        db.updateOrderStatus(order.order_code, 'expired');
+        for (const order of expiredOrders) {
+            db.updateOrderStatus(order.order_code, 'expired');
+            console.log(`⏰ Order ${order.order_code} expired`);
 
-        console.log(`⏰ Order ${order.order_code} expired`);
-
-        // Notify user
-        bot.sendMessage(order.telegram_user_id,
-            `⏰ Đơn hàng #${order.order_code} đã hết hạn thanh toán.\n\n` +
-            `Sản phẩm: ${order.product_name}\n` +
-            `Số tiền: ${order.total_amount.toLocaleString('vi-VN')} đ\n\n` +
-            `Bạn có thể tạo đơn hàng mới bằng cách bấm nút bên dưới.`,
-            {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🏠 Quay lại menu', callback_data: 'menu_main' }],
-                    ],
-                },
-            }
-        ).catch((err) => {
-            console.error(`Error notifying user about expired order ${order.order_code}:`, err.message);
-        });
+            bot.sendMessage(order.telegram_user_id,
+                `⏰ Đơn hàng #${order.order_code} đã hết hạn thanh toán.\n\n` +
+                `Sản phẩm: ${order.product_name}\n` +
+                `Số tiền: ${order.total_amount.toLocaleString('vi-VN')} đ\n\n` +
+                `Bạn có thể tạo đơn hàng mới bằng cách bấm nút bên dưới.`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🛍 Mua hàng', callback_data: 'menu_products' }],
+                            [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                        ],
+                    },
+                }
+            ).catch((err) => {
+                console.error(`Error notifying expired order ${order.order_code}:`, err.message);
+            });
+        }
+    } catch (err) {
+        console.error('Error checking expired orders:', err.message);
     }
 }
 

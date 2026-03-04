@@ -48,6 +48,17 @@ node src/seed.js
 node src/bot.js
 ```
 
+## User Commands
+
+| Command | Mô tả |
+|---------|--------|
+| `/start` | Hiện menu chính |
+| `/products` | Xem danh sách sản phẩm |
+| `/orders` | Đơn hàng đã mua |
+| `/profile` | Thông tin tài khoản của bạn |
+| `/help` | Hỗ trợ khách hàng |
+| `/huongdan` | Hướng dẫn sử dụng bot |
+
 ## Admin Commands
 
 | Command | Mô tả |

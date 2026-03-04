@@ -1,31 +1,23 @@
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const initSqlJs = require('sql.js');
 
-// DB path priority: ENV var > project dir > /tmp fallback
+// DB path priority: ENV > project dir > /tmp fallback
 const PROJECT_DB_PATH = path.join(__dirname, '..', 'bot.db');
 const FALLBACK_DB_PATH = '/tmp/telegram-sales-bot/bot.db';
 
 function getDbPath() {
-    // 1. Use env var if set (production — Railway persistent volume)
     if (process.env.DB_PATH) {
         const dir = path.dirname(process.env.DB_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        console.log(`📁 Database location: ${process.env.DB_PATH}`);
         return process.env.DB_PATH;
     }
-    // 2. Try project dir
     try {
-        const dir = path.dirname(PROJECT_DB_PATH);
-        fs.accessSync(dir, fs.constants.W_OK);
-        console.log(`📁 Database location: ${PROJECT_DB_PATH}`);
+        fs.accessSync(path.dirname(PROJECT_DB_PATH), fs.constants.W_OK);
         return PROJECT_DB_PATH;
     } catch {
-        // 3. Fallback to /tmp (macOS sandbox)
         const dir = path.dirname(FALLBACK_DB_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        console.log(`📁 Database location: ${FALLBACK_DB_PATH}`);
         return FALLBACK_DB_PATH;
     }
 }
@@ -33,14 +25,11 @@ function getDbPath() {
 const DB_PATH = getDbPath();
 let db = null;
 
-/**
- * Initialize SQLite database with sql.js
- * Creates tables if they don't exist
- */
+// ==================== Init ====================
+
 async function initDatabase() {
     const SQL = await initSqlJs();
 
-    // Load existing database or create new
     if (fs.existsSync(DB_PATH)) {
         const buffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(buffer);
@@ -48,7 +37,6 @@ async function initDatabase() {
         db = new SQL.Database();
     }
 
-    // Create tables
     db.run(`
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,24 +99,16 @@ async function initDatabase() {
   `);
 
     saveDatabase();
-    console.log('✅ Database initialized');
+    console.log(`✅ Database initialized (${DB_PATH})`);
     return db;
 }
 
-/**
- * Save database to disk
- */
 function saveDatabase() {
-    if (db) {
-        const data = db.export();
-        const buffer = Buffer.from(data);
-        fs.writeFileSync(DB_PATH, buffer);
-    }
+    if (!db) return;
+    const data = db.export();
+    fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-/**
- * Get the database instance
- */
 function getDb() {
     return db;
 }
@@ -138,9 +118,7 @@ function getDb() {
 function getCategories() {
     const stmt = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order');
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
@@ -164,9 +142,7 @@ function getProducts() {
     ORDER BY c.sort_order, p.name
   `);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
@@ -181,9 +157,7 @@ function getProductById(id) {
   `);
     stmt.bind([id]);
     let result = null;
-    if (stmt.step()) {
-        result = stmt.getAsObject();
-    }
+    if (stmt.step()) result = stmt.getAsObject();
     stmt.free();
     return result;
 }
@@ -222,40 +196,27 @@ function deleteProduct(id) {
 // ==================== Credentials ====================
 
 function getAvailableCredentials(productId, limit = 1) {
-    const stmt = db.prepare(
-        'SELECT * FROM credentials WHERE product_id = ? AND is_sold = 0 LIMIT ?'
-    );
+    const stmt = db.prepare('SELECT * FROM credentials WHERE product_id = ? AND is_sold = 0 LIMIT ?');
     stmt.bind([productId, limit]);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
 
 function getStockCount(productId) {
-    const result = db.exec(
-        'SELECT COUNT(*) FROM credentials WHERE product_id = ? AND is_sold = 0',
-        [productId]
-    );
+    const result = db.exec('SELECT COUNT(*) FROM credentials WHERE product_id = ? AND is_sold = 0', [productId]);
     return result.length > 0 ? result[0].values[0][0] : 0;
 }
 
 function addCredential(productId, data) {
-    db.run(
-        'INSERT INTO credentials (product_id, data) VALUES (?, ?)',
-        [productId, JSON.stringify(data)]
-    );
+    db.run('INSERT INTO credentials (product_id, data) VALUES (?, ?)', [productId, JSON.stringify(data)]);
     saveDatabase();
 }
 
 function bulkAddCredentials(productId, credsList) {
     for (const data of credsList) {
-        db.run(
-            'INSERT INTO credentials (product_id, data) VALUES (?, ?)',
-            [productId, JSON.stringify(data)]
-        );
+        db.run('INSERT INTO credentials (product_id, data) VALUES (?, ?)', [productId, JSON.stringify(data)]);
     }
     saveDatabase();
     return credsList.length;
@@ -263,10 +224,7 @@ function bulkAddCredentials(productId, credsList) {
 
 function markCredentialsSold(credentialIds, orderId) {
     for (const id of credentialIds) {
-        db.run(
-            'UPDATE credentials SET is_sold = 1, order_id = ? WHERE id = ?',
-            [orderId, id]
-        );
+        db.run('UPDATE credentials SET is_sold = 1, order_id = ? WHERE id = ?', [orderId, id]);
     }
     saveDatabase();
 }
@@ -294,9 +252,7 @@ function getOrderByCode(orderCode) {
     const stmt = db.prepare('SELECT * FROM orders WHERE order_code = ?');
     stmt.bind([orderCode]);
     let result = null;
-    if (stmt.step()) {
-        result = stmt.getAsObject();
-    }
+    if (stmt.step()) result = stmt.getAsObject();
     stmt.free();
     return result;
 }
@@ -305,42 +261,46 @@ function getPendingOrderByCode(orderCode) {
     const stmt = db.prepare('SELECT * FROM orders WHERE order_code = ? AND status = ?');
     stmt.bind([orderCode, 'pending']);
     let result = null;
-    if (stmt.step()) {
-        result = stmt.getAsObject();
-    }
+    if (stmt.step()) result = stmt.getAsObject();
     stmt.free();
     return result;
 }
 
 function getUserOrders(telegramUserId, limit = 10) {
-    const stmt = db.prepare(
-        'SELECT * FROM orders WHERE telegram_user_id = ? ORDER BY created_at DESC LIMIT ?'
-    );
+    const stmt = db.prepare('SELECT * FROM orders WHERE telegram_user_id = ? ORDER BY created_at DESC LIMIT ?');
     stmt.bind([telegramUserId, limit]);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
 
+function getUserStats(telegramUserId) {
+    const orders = db.exec(
+        `SELECT COUNT(*) as total_orders,
+            COALESCE(SUM(CASE WHEN status IN ('paid','delivered') THEN total_amount ELSE 0 END), 0) as total_spent,
+            COALESCE(SUM(CASE WHEN status IN ('paid','delivered') THEN quantity ELSE 0 END), 0) as total_items
+     FROM orders WHERE telegram_user_id = ?`,
+        [telegramUserId]
+    );
+    if (orders.length > 0 && orders[0].values.length > 0) {
+        const [totalOrders, totalSpent, totalItems] = orders[0].values[0];
+        return { totalOrders, totalSpent, totalItems };
+    }
+    return { totalOrders: 0, totalSpent: 0, totalItems: 0 };
+}
+
 function updateOrderStatus(orderCode, status) {
     const extraFields = {};
-    if (status === 'paid') {
-        extraFields.paid_at = new Date().toISOString();
-    } else if (status === 'delivered') {
-        extraFields.delivered_at = new Date().toISOString();
-    }
+    if (status === 'paid') extraFields.paid_at = new Date().toISOString();
+    if (status === 'delivered') extraFields.delivered_at = new Date().toISOString();
 
     let sql = 'UPDATE orders SET status = ?';
     const values = [status];
-
     for (const [key, value] of Object.entries(extraFields)) {
         sql += `, ${key} = ?`;
         values.push(value);
     }
-
     sql += ' WHERE order_code = ?';
     values.push(orderCode);
 
@@ -350,27 +310,19 @@ function updateOrderStatus(orderCode, status) {
 
 function getExpiredOrders() {
     const now = new Date().toISOString();
-    const stmt = db.prepare(
-        'SELECT * FROM orders WHERE status = ? AND expires_at < ?'
-    );
+    const stmt = db.prepare('SELECT * FROM orders WHERE status = ? AND expires_at < ?');
     stmt.bind(['pending', now]);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
 
 function getRecentOrders(limit = 20) {
-    const stmt = db.prepare(
-        'SELECT * FROM orders ORDER BY created_at DESC LIMIT ?'
-    );
+    const stmt = db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT ?');
     stmt.bind([limit]);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
@@ -385,9 +337,7 @@ function getAllProductsStock() {
     ORDER BY p.name
   `);
     const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
+    while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
 }
@@ -417,6 +367,7 @@ module.exports = {
     getOrderByCode,
     getPendingOrderByCode,
     getUserOrders,
+    getUserStats,
     updateOrderStatus,
     getExpiredOrders,
     getRecentOrders,

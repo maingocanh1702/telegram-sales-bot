@@ -21,28 +21,26 @@ async function seed() {
     const cat2 = db.addCategory('Giải trí', '🎬');
 
     // Products with custom credential field configs
-    const c1 = cat1;
-    const c2 = cat2;
-    const p1 = db.addProduct('Capcut Pro 35d BHF 13.000đ', 15000, 'tk:mk', 'Dang nhap tren Dien thoai', c1, [
+    const p1 = db.addProduct('Capcut Pro 35d BHF 13.000đ', 15000, 'tk:mk', 'Dang nhap tren Dien thoai', cat1, [
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'email_password', label: 'Pass email', icon: '📧' },
         { key: 'password', label: 'Pass tài khoản', icon: '🔑' },
     ]);
-    const p2 = db.addProduct('ChatGPT Plus 1 tháng', 65000, 'Tài khoản ChatGPT Plus chính chủ', 'Dùng trên trình duyệt', c1, [
+    const p2 = db.addProduct('ChatGPT Plus 1 tháng', 65000, 'Tài khoản ChatGPT Plus chính chủ', 'Dùng trên trình duyệt', cat1, [
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
-    const p3 = db.addProduct('Netflix Premium 1 tháng', 45000, 'Tài khoản Netflix Premium chia sẻ', 'Không đổi mật khẩu', c2, [
+    const p3 = db.addProduct('Netflix Premium 1 tháng', 45000, 'Tài khoản Netflix Premium chia sẻ', 'Không đổi mật khẩu', cat2, [
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'email_password', label: 'Pass email', icon: '📧' },
         { key: 'password', label: 'Pass Netflix', icon: '🔑' },
     ]);
-    const p4 = db.addProduct('Spotify Premium 1 tháng', 25000, 'Tài khoản Spotify Premium', 'Dùng trên điện thoại', c2, [
+    const p4 = db.addProduct('Spotify Premium 1 tháng', 25000, 'Tài khoản Spotify Premium', 'Dùng trên điện thoại', cat2, [
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
 
-    // Credentials as data objects (matching each product's field config)
+    // Credentials
     const credentials = [
         { productId: p1, data: { username: 'capcut_user1@gmail.com', email_password: 'EmailPass1!', password: 'Pass1234!' } },
         { productId: p1, data: { username: 'capcut_user2@gmail.com', email_password: 'EmailPass2!', password: 'Pass5678!' } },

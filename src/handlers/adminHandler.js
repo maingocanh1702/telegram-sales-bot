@@ -96,7 +96,7 @@ function setupAdminHandler(bot) {
             return;
         }
 
-        waitingForBulkFile.set(msg.from.id, productId);
+        waitingForBulkFile.set(msg.from.id, { productId, product });
         const fields = JSON.parse(product.credential_fields || '[]');
         const format = fields.map(f => f.key).join(':');
         bot.sendMessage(msg.chat.id,
@@ -111,7 +111,7 @@ function setupAdminHandler(bot) {
         if (!isAdmin(msg.from.id)) return;
         if (!waitingForBulkFile.has(msg.from.id)) return;
 
-        const productId = waitingForBulkFile.get(msg.from.id);
+        const { productId, product } = waitingForBulkFile.get(msg.from.id);
         waitingForBulkFile.delete(msg.from.id);
 
         try {
@@ -123,10 +123,10 @@ function setupAdminHandler(bot) {
 
             const lines = text.split('\n').filter((l) => l.trim());
             const credsList = [];
+            const fields = JSON.parse(product.credential_fields || '[]');
 
             for (const line of lines) {
                 const parts = line.split(':').map((s) => s.trim());
-                const fields = JSON.parse(product.credential_fields || '[]');
                 const data = {};
                 fields.forEach((f, i) => { data[f.key] = parts[i] || ''; });
                 if (Object.values(data).some(v => v)) {
@@ -135,15 +135,15 @@ function setupAdminHandler(bot) {
             }
 
             if (credsList.length === 0) {
-                bot.sendMessage(msg.chat.id, '❌ File không chứa credentials hợp lệ.\nFormat: `username:password` (mỗi dòng)', { parse_mode: 'Markdown' });
+                bot.sendMessage(msg.chat.id, '❌ File không chứa credentials hợp lệ.', { parse_mode: 'Markdown' });
                 return;
             }
 
             const count = db.bulkAddCredentials(productId, credsList);
-            const product = db.getProductById(productId);
+            const updatedProduct = db.getProductById(productId);
             bot.sendMessage(msg.chat.id,
-                `✅ Đã import **${count}** credentials cho ${product.name}.\n` +
-                `Stock hiện tại: ${product.stock}`,
+                `✅ Đã import **${count}** credentials cho ${updatedProduct.name}.\n` +
+                `Stock hiện tại: ${updatedProduct.stock}`,
                 { parse_mode: 'Markdown' }
             );
         } catch (err) {
@@ -173,7 +173,7 @@ function setupAdminHandler(bot) {
         bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
     });
 
-    // /orders — recent orders
+    // /orders — recent orders (admin view)
     bot.onText(/\/orders/, (msg) => {
         if (!isAdmin(msg.from.id)) return;
 
@@ -217,12 +217,8 @@ function setupAdminHandler(bot) {
         }
 
         db.updateOrderStatus(orderCode, 'paid');
+        bot.sendMessage(msg.chat.id, `✅ Đã xác nhận đơn: #${orderCode}\nĐang gửi sản phẩm cho khách...`);
 
-        bot.sendMessage(msg.chat.id,
-            `✅ Đã xác nhận đơn: #${orderCode}\nĐang gửi sản phẩm cho khách...`
-        );
-
-        // Deliver credentials
         await deliverCredentials(bot, order);
 
         bot.sendMessage(msg.chat.id, `📬 Đã gửi sản phẩm cho @${order.telegram_username || order.telegram_user_id}`);

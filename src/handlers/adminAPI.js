@@ -7,7 +7,7 @@ const { deliverCredentials } = require('./deliveryHandler');
  * All routes prefixed with /api/admin
  */
 function setupAdminAPI(app, bot) {
-    // Simple auth middleware — check API key header
+    // Auth middleware
     const authMiddleware = (req, res, next) => {
         const apiKey = req.headers['x-api-key'] || req.query.apiKey;
         if (apiKey !== config.sepayApiKey) {
@@ -16,24 +16,7 @@ function setupAdminAPI(app, bot) {
         next();
     };
 
-    // Apply auth to all /api/admin routes
     app.use('/api/admin', authMiddleware);
-
-    // ==================== Debug (temporary) ====================
-    app.get('/api/admin/debug/products', authMiddleware, (req, res) => {
-        try {
-            const d = db.getDb();
-            const allProducts = d.exec('SELECT id, name, is_active, typeof(is_active) as type FROM products');
-            const botProducts = db.getProducts();
-            res.json({
-                raw: allProducts,
-                botVisible: botProducts,
-                botCount: botProducts.length,
-            });
-        } catch (err) {
-            res.status(500).json({ error: true, message: err.message });
-        }
-    });
 
     // ==================== Dashboard ====================
 
@@ -66,8 +49,7 @@ function setupAdminAPI(app, bot) {
 
     app.get('/api/admin/products', (req, res) => {
         try {
-            const products = db.getAllProductsStock();
-            res.json(products);
+            res.json(db.getAllProductsStock());
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
@@ -117,14 +99,10 @@ function setupAdminAPI(app, bot) {
     app.get('/api/admin/credentials/:productId', (req, res) => {
         try {
             const d = db.getDb();
-            const stmt = d.prepare(
-                'SELECT * FROM credentials WHERE product_id = ? ORDER BY is_sold ASC, created_at DESC'
-            );
+            const stmt = d.prepare('SELECT * FROM credentials WHERE product_id = ? ORDER BY is_sold ASC, created_at DESC');
             stmt.bind([parseInt(req.params.productId)]);
             const results = [];
-            while (stmt.step()) {
-                results.push(stmt.getAsObject());
-            }
+            while (stmt.step()) results.push(stmt.getAsObject());
             stmt.free();
             res.json(results);
         } catch (err) {
@@ -165,7 +143,6 @@ function setupAdminAPI(app, bot) {
                 return res.status(400).json({ error: true, message: 'data object required', code: 'VALIDATION_ERROR' });
             }
             const d = db.getDb();
-            // Only allow editing unsold credentials
             const existing = d.exec('SELECT id, is_sold FROM credentials WHERE id = ?', [parseInt(req.params.id)]);
             if (!existing.length || !existing[0].values.length) {
                 return res.status(404).json({ error: true, message: 'Credential not found', code: 'NOT_FOUND' });
@@ -196,8 +173,7 @@ function setupAdminAPI(app, bot) {
 
     app.get('/api/admin/orders', (req, res) => {
         try {
-            const orders = db.getRecentOrders(100);
-            res.json(orders);
+            res.json(db.getRecentOrders(100));
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
@@ -205,7 +181,6 @@ function setupAdminAPI(app, bot) {
 
     app.post('/api/admin/orders/:code/confirm', async (req, res) => {
         try {
-            // Allow confirming both pending AND expired orders (admin override)
             const order = db.getOrderByCode(req.params.code);
             if (!order) {
                 return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
@@ -218,10 +193,12 @@ function setupAdminAPI(app, bot) {
             }
             db.updateOrderStatus(req.params.code, 'paid');
 
-            // Auto-deliver credentials to customer via bot
             if (bot) {
                 const delivered = await deliverCredentials(bot, order);
-                return res.json({ message: delivered ? 'Order confirmed & credentials sent' : 'Order confirmed, but delivery pending (stock issue)', orderCode: req.params.code });
+                return res.json({
+                    message: delivered ? 'Order confirmed & credentials sent' : 'Order confirmed, delivery pending (stock issue)',
+                    orderCode: req.params.code,
+                });
             }
             res.json({ message: 'Order confirmed', orderCode: req.params.code });
         } catch (err) {
