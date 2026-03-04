@@ -564,6 +564,9 @@
         <a onclick="showSection('settings')">
           <span class="material-symbols-rounded">settings</span> Cài đặt
         </a>
+        <a onclick="showSection('customers')">
+          <span class="material-symbols-rounded">group</span> Khách hàng
+        </a>
         <a onclick="showSection('broadcast')">
           <span class="material-symbols-rounded">campaign</span> Thông báo
         </a>
@@ -652,6 +655,29 @@
             </select>
           </div>
           <div id="ordersTable"></div>
+        </div>
+      </div>
+
+      <div class="section" id="sec-customers">
+        <div class="page-header">
+          <h1>👥 Khách hàng</h1>
+          <p>Danh sách khách hàng và thống kê mua hàng</p>
+        </div>
+        <div class="card">
+          <div id="customersTable"></div>
+        </div>
+      </div>
+
+      <!-- Customer Detail Modal -->
+      <div class="modal-overlay" id="customerModal">
+        <div class="modal" style="max-width:700px">
+          <h3 id="customerModalTitle">Chi tiết khách hàng</h3>
+          <div id="customerStats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+          <div id="customerOrdersTable"></div>
+          <div style="text-align:right;margin-top:16px">
+            <button class="btn btn-ghost"
+              onclick="document.getElementById('customerModal').classList.remove('active')">Đóng</button>
+          </div>
         </div>
       </div>
 
@@ -874,6 +900,7 @@ Số Lượng Đang Hiện Có 10"
       if (name === 'products') loadProducts();
       if (name === 'credentials') { populateProductSelects(); loadCredentials(); }
       if (name === 'orders') loadOrders();
+      if (name === 'customers') loadCustomers();
       if (name === 'settings') loadBankAccounts();
     }
 
@@ -1282,6 +1309,80 @@ Số Lượng Đang Hiện Có 10"
       }
       html += '</table>';
       document.getElementById(containerId).innerHTML = html;
+    }
+
+    // ==================== Customers ====================
+    async function loadCustomers() {
+      try {
+        const customers = await apiFetch('/customers');
+        let html = '<table><tr><th>Khách hàng</th><th>Đơn hàng</th><th>Doanh thu</th><th>SP đã mua</th><th>Lần mua cuối</th><th></th></tr>';
+        if (customers.length === 0) {
+          html += '<tr><td colspan="6"><div class="empty-state"><span class="material-symbols-rounded">group</span><p>Chưa có khách hàng</p></div></td></tr>';
+        }
+        for (const c of customers) {
+          const products = (c.product_names || '').split(',').filter(Boolean);
+          const productList = products.slice(0, 2).join(', ') + (products.length > 2 ? ` +${products.length - 2}` : '');
+          html += `<tr>
+            <td><strong>@${c.telegram_username || c.telegram_user_id}</strong><br><span style="font-size:11px;color:var(--text-muted)">ID: ${c.telegram_user_id}</span></td>
+            <td>${c.delivered_count}✅ ${c.cancelled_count > 0 ? c.cancelled_count + '❌' : ''}<br><span style="font-size:11px;color:var(--text-muted)">${c.total_orders} tổng</span></td>
+            <td class="money" style="font-weight:600;color:var(--primary)">${formatMoney(c.total_spent)}</td>
+            <td style="font-size:12px">${productList}</td>
+            <td style="font-size:12px;color:var(--text-muted)">${(c.last_purchase || '').split('T')[0]}</td>
+            <td><button class="btn btn-sm" onclick="viewCustomerOrders(${c.telegram_user_id}, '${c.telegram_username || c.telegram_user_id}')" style="background:var(--bg-card);border:1px solid var(--border)">👁</button></td>
+          </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('customersTable').innerHTML = html;
+      } catch (e) { document.getElementById('customersTable').innerHTML = '<p style="color:red">' + e.message + '</p>'; }
+    }
+
+    async function viewCustomerOrders(userId, username) {
+      document.getElementById('customerModalTitle').textContent = '👤 @' + username;
+      document.getElementById('customerModal').classList.add('active');
+      document.getElementById('customerOrdersTable').innerHTML = '<p style="text-align:center;padding:20px">⏳ Đang tải...</p>';
+
+      try {
+        const orders = await apiFetch('/customers/' + userId + '/orders');
+
+        // Stats cards
+        const totalSpent = orders.filter(o => o.status === 'delivered' || o.status === 'paid').reduce((s, o) => s + o.total_amount, 0);
+        const delivered = orders.filter(o => o.status === 'delivered').length;
+        const statsHtml = `
+          <div style="flex:1;min-width:100px;padding:12px;background:var(--bg-main);border-radius:8px;text-align:center">
+            <div style="font-size:20px;font-weight:700;color:var(--primary)">${formatMoney(totalSpent)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">Tổng doanh thu</div>
+          </div>
+          <div style="flex:1;min-width:100px;padding:12px;background:var(--bg-main);border-radius:8px;text-align:center">
+            <div style="font-size:20px;font-weight:700">${orders.length}</div>
+            <div style="font-size:11px;color:var(--text-muted)">Tổng đơn</div>
+          </div>
+          <div style="flex:1;min-width:100px;padding:12px;background:var(--bg-main);border-radius:8px;text-align:center">
+            <div style="font-size:20px;font-weight:700;color:#22c55e">${delivered}</div>
+            <div style="font-size:11px;color:var(--text-muted)">Đã giao</div>
+          </div>`;
+        document.getElementById('customerStats').innerHTML = statsHtml;
+
+        // Orders table
+        const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivered: 'badge-success', cancelled: 'badge-danger' };
+        let html = '<table><tr><th>Mã đơn</th><th>Sản phẩm</th><th>SL</th><th>Tiền</th><th>Trạng thái</th><th>Thời gian</th></tr>';
+        for (const o of orders) {
+          html += `<tr>
+            <td><code>${o.order_code}</code></td>
+            <td>${o.product_name}</td>
+            <td>${o.quantity}</td>
+            <td class="money">${formatMoney(o.total_amount)}</td>
+            <td><span class="badge ${statusMap[o.status] || ''}">${o.status}</span></td>
+            <td style="font-size:12px;color:var(--text-muted)">${(o.created_at || '').split('T')[0]}${(() => {
+              if (!o.subscription_expires_at) return '';
+              const days = Math.ceil((new Date(o.subscription_expires_at) - new Date()) / 86400000);
+              let color = days < 0 ? 'var(--text-muted)' : days <= 7 ? '#ef4444' : days <= 30 ? '#f59e0b' : '#22c55e';
+              return '<br><span style="font-weight:600;color:' + color + '">⏰ ' + (days < 0 ? 'Hết hạn' : days + ' ngày') + '</span>';
+            })()}</td>
+          </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('customerOrdersTable').innerHTML = html;
+      } catch (e) { document.getElementById('customerOrdersTable').innerHTML = '<p style="color:red">' + e.message + '</p>'; }
     }
 
     async function sendBroadcast() {

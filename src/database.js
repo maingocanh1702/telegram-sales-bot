@@ -495,6 +495,44 @@ function getUniqueCustomerIds() {
     return results;
 }
 
+function getCustomerStats() {
+    const stmt = db.prepare(`
+      SELECT 
+        o.telegram_user_id,
+        o.telegram_username,
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN o.status IN ('paid','delivered') THEN o.total_amount ELSE 0 END) as total_spent,
+        COUNT(DISTINCT o.product_id) as unique_products,
+        MAX(o.created_at) as last_purchase,
+        GROUP_CONCAT(DISTINCT p.name) as product_names,
+        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
+        SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_count
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      GROUP BY o.telegram_user_id
+      ORDER BY total_spent DESC
+    `);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function getCustomerOrders(telegramUserId) {
+    const stmt = db.prepare(`
+      SELECT o.*, p.product_type, p.subscription_days
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      WHERE o.telegram_user_id = ?
+      ORDER BY o.created_at DESC
+    `);
+    stmt.bind([telegramUserId]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
 module.exports = {
     initDatabase,
     saveDatabase,
@@ -509,6 +547,8 @@ module.exports = {
     updateProduct,
     deleteProduct,
     getUniqueCustomerIds,
+    getCustomerStats,
+    getCustomerOrders,
     // Credentials
     getAvailableCredentials,
     getStockCount,
