@@ -161,7 +161,7 @@ function setupAdminAPI(app, bot) {
     app.delete('/api/admin/credentials/:id', (req, res) => {
         try {
             const d = db.getDb();
-            d.run('DELETE FROM credentials WHERE id = ? AND is_sold = 0', [parseInt(req.params.id)]);
+            d.run('DELETE FROM credentials WHERE id = ? AND CAST(is_sold AS INTEGER) = 0', [parseInt(req.params.id)]);
             db.saveDatabase();
             res.json({ message: 'Credential deleted' });
         } catch (err) {
