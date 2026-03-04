@@ -11,11 +11,18 @@ function setupWebhookHandler(app, bot) {
         try {
             const payload = req.body;
 
-            console.log('📥 SePay Webhook received:', JSON.stringify(payload, null, 2));
+            // Auth: verify SePay API key
+            const authKey = req.headers['authorization'] || req.headers['x-api-key'] || '';
+            const token = authKey.replace('Bearer ', '').replace('Apikey ', '');
+            if (config.sepayApiKey && token !== config.sepayApiKey) {
+                console.warn('⚠️ Webhook auth failed — invalid API key');
+                return res.status(401).json({ success: false, message: 'Unauthorized' });
+            }
+
+            console.log(`📥 Webhook: ${payload.transferType} ${payload.transferAmount} — code: ${payload.code || 'N/A'}`);
 
             // Only process incoming transfers
             if (payload.transferType !== 'in') {
-                console.log('⏭️ Skipping non-incoming transfer');
                 res.json({ success: true });
                 return;
             }
@@ -38,25 +45,25 @@ function setupWebhookHandler(app, bot) {
             }
 
             if (!orderCode) {
-                console.log('⚠️ No order code found in transaction:', content);
+                console.log('⚠️ No order code found in transaction');
                 res.json({ success: true });
                 return;
             }
 
-            console.log(`🔍 Found order code: ${orderCode}, amount: ${amount}`);
+            console.log(`🔍 Order: ${orderCode}, amount: ${amount}`);
 
             // Find pending order
             const order = db.getPendingOrderByCode(orderCode);
 
             if (!order) {
-                console.log(`⚠️ No pending order found for code: ${orderCode}`);
+                console.log(`⚠️ No pending order: ${orderCode}`);
                 res.json({ success: true });
                 return;
             }
 
             // Verify amount
             if (amount < order.total_amount) {
-                console.log(`⚠️ Amount mismatch for ${orderCode}: received ${amount}, expected ${order.total_amount}`);
+                console.log(`⚠️ Amount mismatch: ${orderCode} — ${amount} < ${order.total_amount}`);
 
                 bot.sendMessage(order.telegram_user_id,
                     `⚠️ Đơn hàng #${orderCode}: Số tiền nhận được (${amount.toLocaleString('vi-VN')} đ) ` +
@@ -69,7 +76,7 @@ function setupWebhookHandler(app, bot) {
             }
 
             // ✅ Payment confirmed!
-            console.log(`✅ Payment confirmed for order ${orderCode}`);
+            console.log(`✅ Payment confirmed: ${orderCode}`);
             db.updateOrderStatus(orderCode, 'paid');
 
             // Notify user
@@ -91,7 +98,7 @@ function setupWebhookHandler(app, bot) {
 
             res.json({ success: true });
         } catch (err) {
-            console.error('❌ Webhook error:', err);
+            console.error('❌ Webhook error:', err.message);
             res.status(500).json({ error: 'Internal error' });
         }
     });

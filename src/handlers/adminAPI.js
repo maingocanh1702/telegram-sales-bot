@@ -10,7 +10,7 @@ function setupAdminAPI(app, bot) {
     // Auth middleware
     const authMiddleware = (req, res, next) => {
         const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-        if (apiKey !== config.sepayApiKey) {
+        if (apiKey !== config.adminApiKey) {
             return res.status(401).json({ error: true, message: 'Unauthorized', code: 'UNAUTHORIZED' });
         }
         next();
