@@ -966,8 +966,12 @@
     async function deleteProduct(id) {
       if (!confirm('Xóa sản phẩm này?')) return;
       try {
-        await apiFetch(`/products/${id}`, { method: 'DELETE' });
-        toast('Đã xóa sản phẩm');
+        const result = await apiFetch(`/products/${id}`, { method: 'DELETE' });
+        if (result.action === 'deleted') {
+          toast('🗑️ Đã xóa hẳn sản phẩm');
+        } else {
+          toast(`⚠️ SP có ${result.orderCount} đơn hàng → chuyển sang Inactive (không xóa hẳn)`, 'warning');
+        }
         loadProducts();
       } catch (e) { toast(e.message, 'error'); }
     }
