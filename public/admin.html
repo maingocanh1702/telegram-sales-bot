@@ -628,6 +628,18 @@
           <p>Tất cả đơn hàng</p>
         </div>
         <div class="card">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+            <label style="font-weight:600;white-space:nowrap">Lọc trạng thái:</label>
+            <select id="orderStatusFilter" onchange="loadOrders()"
+              style="padding:8px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);min-width:160px">
+              <option value="">— Tất cả —</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="paid">💰 Paid</option>
+              <option value="delivered">✅ Delivered</option>
+              <option value="cancelled">❌ Cancelled</option>
+              <option value="expired">⏰ Expired</option>
+            </select>
+          </div>
           <div id="ordersTable"></div>
         </div>
       </div>
@@ -688,12 +700,18 @@
         <select id="pType" onchange="toggleProductTypeFields()">
           <option value="credential">🔑 Credential (giao tài khoản tự động)</option>
           <option value="invite">📧 Invite (gửi invite qua email)</option>
+          <option value="preorder">📦 Preorder (đặt trước, giao sau)</option>
         </select>
       </div>
       <div id="inviteSlotsGroup" class="form-group" style="display:none">
         <label>Số slots khả dụng</label>
         <input type="number" id="pInviteSlots" placeholder="5" min="0">
         <p class="hint">Số lượng invite còn trống (VD: YouTube Family max 5)</p>
+      </div>
+      <div id="deliveryHoursGroup" class="form-group" style="display:none">
+        <label>Thời gian giao hàng (giờ)</label>
+        <input type="number" id="pDeliveryHours" placeholder="24" min="1" value="24">
+        <p class="hint">Hẹn giao trong bao nhiêu giờ sau thanh toán</p>
       </div>
       <div id="credentialFieldsGroup" class="form-group">
         <label>Trường thông tin credential</label>
@@ -889,6 +907,7 @@
       const pType = product ? (product.product_type || 'credential') : 'credential';
       document.getElementById('pType').value = pType;
       document.getElementById('pInviteSlots').value = product ? (product.invite_slots || 0) : '';
+      document.getElementById('pDeliveryHours').value = product ? (product.delivery_hours || 24) : 24;
       toggleProductTypeFields();
 
       // Populate field builder
@@ -913,6 +932,7 @@
     function toggleProductTypeFields() {
       const type = document.getElementById('pType').value;
       document.getElementById('inviteSlotsGroup').style.display = type === 'invite' ? '' : 'none';
+      document.getElementById('deliveryHoursGroup').style.display = type === 'preorder' ? '' : 'none';
       document.getElementById('credentialFieldsGroup').style.display = type === 'credential' ? '' : 'none';
     }
 
@@ -928,6 +948,7 @@
         productType,
         credentialFields: productType === 'credential' ? credentialFields : undefined,
         inviteSlots: productType === 'invite' ? (document.getElementById('pInviteSlots').value || 0) : undefined,
+        deliveryHours: productType === 'preorder' ? (document.getElementById('pDeliveryHours').value || 24) : undefined,
       };
       try {
         if (id) {
@@ -1094,7 +1115,11 @@
     // ==================== Orders ====================
     async function loadOrders() {
       try {
-        const orders = await apiFetch('/orders');
+        let orders = await apiFetch('/orders');
+        const statusFilter = document.getElementById('orderStatusFilter').value;
+        if (statusFilter) {
+          orders = orders.filter(o => o.status === statusFilter);
+        }
         renderOrdersTable(orders, 'ordersTable', true);
       } catch (e) { toast(e.message, 'error'); }
     }

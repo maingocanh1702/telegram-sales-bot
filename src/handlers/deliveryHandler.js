@@ -13,8 +13,62 @@ async function deliverCredentials(bot, order) {
 
     if (productType === 'invite') {
         return deliverInvite(bot, order, product);
+    } else if (productType === 'preorder') {
+        return deliverPreorder(bot, order, product);
     } else {
         return deliverCredential(bot, order, product);
+    }
+}
+
+/**
+ * Preorder products: notify admin to fulfill, tell customer delivery time
+ */
+async function deliverPreorder(bot, order, product) {
+    try {
+        const email = order.customer_email;
+        const hours = product.delivery_hours || 24;
+
+        // Notify admin
+        let adminText = `📦 **ĐƠN PREORDER CẦN XỬ LÝ**\n\n`;
+        adminText += `🆔 Đơn: **#${order.order_code}**\n`;
+        adminText += `📦 SP: **${order.product_name}**\n`;
+        adminText += `📧 Email: **${email}**\n`;
+        adminText += `👤 Khách: @${order.telegram_username || order.telegram_user_id}\n`;
+        adminText += `💰 Số tiền: ${formatPrice(order.total_amount)}\n`;
+        adminText += `⏰ Hẹn giao trong: **${hours} giờ**\n\n`;
+        adminText += `👉 Xử lý xong thì bấm nút bên dưới.`;
+
+        await bot.sendMessage(config.adminTelegramId, adminText, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✅ Đã giao', callback_data: `preorder_done_${order.order_code}` }],
+                ],
+            },
+        });
+
+        // Notify customer
+        await bot.sendMessage(order.telegram_user_id,
+            `✅ **Đơn #${order.order_code} đã thanh toán!**\n\n` +
+            `📦 SP: **${order.product_name}**\n` +
+            `📧 Email nhận: **${email}**\n` +
+            `⏰ Tài khoản sẽ được gửi trong vòng **${hours} giờ**.\n\n` +
+            `Bạn sẽ nhận thông báo khi hoàn tất. Cảm ơn bạn! 🙏`,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                    ],
+                },
+            }
+        );
+
+        console.log(`📦 Preorder notification sent for order ${order.order_code} → ${email}`);
+        return true;
+    } catch (err) {
+        console.error(`Error sending preorder notification for ${order.order_code}:`, err.message);
+        return false;
     }
 }
 
@@ -189,6 +243,55 @@ function setupInviteConfirmHandler(bot) {
         );
 
         console.log(`✅ Invite confirmed for order ${orderCode} → ${order.customer_email}`);
+    });
+
+    // Handle preorder fulfillment confirmation
+    bot.on('callback_query', (query) => {
+        if (!query.data.startsWith('preorder_done_')) return;
+
+        const orderCode = query.data.replace('preorder_done_', '');
+        const order = db.getOrderByCode(orderCode);
+
+        if (!order) {
+            bot.answerCallbackQuery(query.id, { text: '❌ Đơn hàng không tồn tại' });
+            return;
+        }
+
+        if (order.status === 'delivered') {
+            bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận trước đó rồi' });
+            return;
+        }
+
+        db.updateOrderStatus(orderCode, 'delivered');
+        bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận giao hàng!' });
+
+        bot.editMessageText(
+            query.message.text + '\n\n✅ **ĐÃ GIAO** ✅',
+            {
+                chat_id: query.message.chat.id,
+                message_id: query.message.message_id,
+                parse_mode: 'Markdown',
+            }
+        ).catch(() => { });
+
+        bot.sendMessage(order.telegram_user_id,
+            `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
+            `📦 SP: **${order.product_name}**\n` +
+            `📧 Thông tin đã gửi đến: **${order.customer_email}**\n` +
+            `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n\n` +
+            `Cảm ơn bạn đã mua hàng! 🙏`,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🛍 Mua thêm', callback_data: 'menu_products' }],
+                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                    ],
+                },
+            }
+        );
+
+        console.log(`✅ Preorder fulfilled for order ${orderCode} → ${order.customer_email}`);
     });
 }
 

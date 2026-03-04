@@ -59,6 +59,7 @@ async function initDatabase() {
       product_type TEXT DEFAULT 'credential',
       credential_fields TEXT DEFAULT '[{"key":"username","label":"Tài khoản","icon":"👤"},{"key":"password","label":"Mật khẩu","icon":"🔑"}]',
       invite_slots INTEGER DEFAULT 0,
+      delivery_hours INTEGER DEFAULT 24,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -129,6 +130,7 @@ async function initDatabase() {
     const migrations = [
         `ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'credential'`,
         `ALTER TABLE products ADD COLUMN invite_slots INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN delivery_hours INTEGER DEFAULT 24`,
         `ALTER TABLE orders ADD COLUMN customer_email TEXT`,
     ];
     for (const sql of migrations) {
@@ -181,8 +183,14 @@ function getProducts() {
     const results = [];
     while (stmt.step()) {
         const row = stmt.getAsObject();
-        // For invite products, stock = invite_slots; for credential, stock = credential count
-        row.stock = row.product_type === 'invite' ? (row.invite_slots || 0) : row.credential_stock;
+        // Stock logic by product type
+        if (row.product_type === 'invite') {
+            row.stock = row.invite_slots || 0;
+        } else if (row.product_type === 'preorder') {
+            row.stock = 999; // preorder always available
+        } else {
+            row.stock = row.credential_stock;
+        }
         results.push(row);
     }
     stmt.free();
@@ -201,20 +209,26 @@ function getProductById(id) {
     let result = null;
     if (stmt.step()) {
         result = stmt.getAsObject();
-        result.stock = result.product_type === 'invite' ? (result.invite_slots || 0) : result.credential_stock;
+        if (result.product_type === 'invite') {
+            result.stock = result.invite_slots || 0;
+        } else if (result.product_type === 'preorder') {
+            result.stock = 999;
+        } else {
+            result.stock = result.credential_stock;
+        }
     }
     stmt.free();
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots]
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
