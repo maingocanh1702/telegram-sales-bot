@@ -1255,7 +1255,18 @@ Số Lượng Đang Hiện Có 10"
           <td class="money">${formatMoney(o.total_amount)}</td>
           <td>@${o.telegram_username || o.telegram_user_id}${emailInfo}</td>
           <td><span class="badge ${statusMap[o.status] || ''}">${o.status}</span></td>
-          <td style="font-size:12px;color:var(--text-muted)">${o.created_at}${o.subscription_expires_at ? `<br><span style="color:var(--primary)">⏰ ${o.subscription_expires_at}</span>` : ''}</td>`;
+          <td style="font-size:12px;color:var(--text-muted)">${o.created_at}${(() => {
+            if (!o.subscription_expires_at) return '';
+            const now = new Date();
+            const exp = new Date(o.subscription_expires_at);
+            const days = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+            let color, label;
+            if (days < 0) { color = 'var(--text-muted)'; label = 'Hết hạn'; }
+            else if (days <= 7) { color = '#ef4444'; label = days + ' ngày'; }
+            else if (days <= 30) { color = '#f59e0b'; label = days + ' ngày'; }
+            else { color = '#22c55e'; label = days + ' ngày'; }
+            return '<br><span style="font-weight:600;color:' + color + '">⏰ ' + label + '</span>';
+          })()}</td>`;
         if (showActions) {
           html += '<td>';
           if (o.status === 'pending') {
