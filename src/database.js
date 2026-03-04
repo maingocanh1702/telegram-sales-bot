@@ -412,9 +412,21 @@ function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
            p.product_type, p.invite_slots, p.delivery_hours,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as available,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1) as sold,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id) as total
+           CASE p.product_type
+             WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
+             WHEN 'preorder' THEN 999
+             ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0)
+           END as available,
+           CASE p.product_type
+             WHEN 'invite' THEN 0
+             WHEN 'preorder' THEN 0
+             ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1)
+           END as sold,
+           CASE p.product_type
+             WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
+             WHEN 'preorder' THEN 999
+             ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id)
+           END as total
     FROM products p
     ORDER BY p.is_active DESC, p.name
   `);
