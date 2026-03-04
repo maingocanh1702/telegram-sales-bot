@@ -8,6 +8,14 @@ function setupProfileHandler(bot) {
     bot.onText(/\/profile/, (msg) => {
         showProfile(bot, msg.chat.id, msg.from);
     });
+
+    // Handle Reply Keyboard → _profile callback
+    bot.on('callback_query', (query) => {
+        if (query.data === '_profile') {
+            if (!query._isSimulated) bot.answerCallbackQuery(query.id);
+            showProfile(bot, query.message.chat.id, query.from);
+        }
+    });
 }
 
 /**
