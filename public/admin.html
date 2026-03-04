@@ -1012,15 +1012,15 @@ Số Lượng Đang Hiện Có 10"
       const container = document.getElementById('customerFieldBuilder');
       const row = document.createElement('div');
       row.className = 'field-row';
-      row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:center;padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)';
       row.innerHTML = `
-        <select style="padding:6px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);min-width:80px" value="${type}">
-          <option value="email" ${type === 'email' ? 'selected' : ''}>Email</option>
-          <option value="text" ${type === 'text' ? 'selected' : ''}>Text</option>
+        <select style="padding:8px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);width:100px">
+          <option value="email" ${type === 'email' ? 'selected' : ''}>📧 Email</option>
+          <option value="text" ${type === 'text' ? 'selected' : ''}>📝 Text</option>
         </select>
-        <input value="${key}" placeholder="key" style="flex:1;padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
-        <input value="${label}" placeholder="Nhãn (VD: Email, Mật khẩu)" style="flex:1;padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
-        <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">×</button>
+        <input value="${key}" placeholder="Key (VD: email, password)" style="min-width:120px;flex:1;padding:8px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
+        <input value="${label}" placeholder="Nhãn hiển thị (VD: Email, Mật khẩu)" style="min-width:140px;flex:1;padding:8px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
+        <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()" style="padding:6px 10px">×</button>
       `;
       container.appendChild(row);
     }
