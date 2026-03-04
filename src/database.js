@@ -61,6 +61,7 @@ async function initDatabase() {
       invite_slots INTEGER DEFAULT 0,
       delivery_hours INTEGER DEFAULT 24,
       subscription_days INTEGER,
+      customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]',
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -136,6 +137,7 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN subscription_days INTEGER`,
         `ALTER TABLE orders ADD COLUMN subscription_expires_at TEXT`,
         `ALTER TABLE orders ADD COLUMN expiry_reminded INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]'`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -415,7 +417,7 @@ function getRecentOrders(limit = 20) {
 function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
-           p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days,
+           p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days, p.customer_fields,
            CASE p.product_type
              WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
              WHEN 'preorder' THEN 999
