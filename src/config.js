@@ -32,6 +32,7 @@ const config = {
 
   // SePay
   sepayApiKey: process.env.SEPAY_API_KEY,
+  sepayVaName: process.env.SEPAY_VA_NAME || '',
 
   // Server
   port: parseInt(process.env.PORT) || 3000,
