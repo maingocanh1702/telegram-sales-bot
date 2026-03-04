@@ -124,6 +124,17 @@ async function initDatabase() {
     )
   `);
 
+    // ==================== Migrations ====================
+    // Add new columns to existing tables (safe to run multiple times)
+    const migrations = [
+        `ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'credential'`,
+        `ALTER TABLE products ADD COLUMN invite_slots INTEGER DEFAULT 0`,
+        `ALTER TABLE orders ADD COLUMN customer_email TEXT`,
+    ];
+    for (const sql of migrations) {
+        try { db.run(sql); } catch (e) { /* column already exists */ }
+    }
+
     saveDatabase();
     console.log(`✅ Database initialized (${DB_PATH})`);
     return db;
