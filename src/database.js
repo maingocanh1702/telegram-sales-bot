@@ -447,7 +447,12 @@ function setSubscriptionExpiry(orderCode, subscriptionDays) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + subscriptionDays);
     const expiresStr = expiresAt.toISOString().split('T')[0]; // YYYY-MM-DD
-    db.run('UPDATE orders SET subscription_expires_at = ? WHERE order_code = ?', [expiresStr, orderCode]);
+    db.run('UPDATE orders SET subscription_expires_at = ?, expiry_reminded = 0 WHERE order_code = ?', [expiresStr, orderCode]);
+    saveDatabase();
+}
+
+function setOrderExpiryDate(orderCode, expiresAtStr) {
+    db.run('UPDATE orders SET subscription_expires_at = ?, expiry_reminded = 0 WHERE order_code = ?', [expiresAtStr, orderCode]);
     saveDatabase();
 }
 
@@ -523,6 +528,7 @@ module.exports = {
     getExpiringSubscriptions,
     markExpiryReminded,
     setSubscriptionExpiry,
+    setOrderExpiryDate,
     getAllProductsStock,
     // Settings
     getSetting,
