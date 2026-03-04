@@ -561,6 +561,9 @@
         <a onclick="showSection('orders')">
           <span class="material-symbols-rounded">receipt_long</span> Đơn hàng
         </a>
+        <a onclick="showSection('settings')">
+          <span class="material-symbols-rounded">settings</span> Cài đặt
+        </a>
       </nav>
     </aside>
 
@@ -626,6 +629,35 @@
         </div>
         <div class="card">
           <div id="ordersTable"></div>
+        </div>
+      </div>
+
+      <div class="section" id="sec-settings">
+        <div class="page-header">
+          <h1>Cài đặt</h1>
+          <p>Cấu hình thông tin thanh toán</p>
+        </div>
+        <div class="card" style="padding:24px">
+          <h3 style="margin-bottom:16px">🏦 Thông tin ngân hàng</h3>
+          <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px">Thay đổi tài khoản nhận thanh toán.
+            Áp dụng ngay cho đơn hàng mới mà không cần deploy lại.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group"><label>Mã ngân hàng (BIN)</label><input id="sBankId" placeholder="970423"></div>
+            <div class="form-group"><label>Mã ngắn NH</label><input id="sBankCode" placeholder="TPB"></div>
+            <div class="form-group"><label>Tên ngân hàng</label><input id="sBankName" placeholder="TPBank"></div>
+            <div class="form-group"><label>Số tài khoản</label><input id="sBankAccountNo" placeholder="02635252601">
+            </div>
+            <div class="form-group" style="grid-column:span 2"><label>Chủ tài khoản</label><input id="sBankAccountName"
+                placeholder="MAI NGOC ANH"></div>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="saveSettings()"><span class="material-symbols-rounded"
+                style="font-size:16px">save</span> Lưu cài đặt</button>
+            <button class="btn btn-ghost" onclick="loadSettings()">Hoàn tác</button>
+          </div>
+          <p class="hint" style="margin-top:12px">💡 Tra mã BIN ngân hàng tại <a
+              href="https://www.vietqr.io/danh-sach-ngan-hang" target="_blank" style="color:var(--accent)">vietqr.io</a>
+          </p>
         </div>
       </div>
     </main>
@@ -752,6 +784,7 @@
       if (name === 'products') loadProducts();
       if (name === 'credentials') { populateProductSelects(); loadCredentials(); }
       if (name === 'orders') loadOrders();
+      if (name === 'settings') loadSettings();
     }
 
     // ==================== Dashboard ====================
@@ -1072,6 +1105,34 @@
         await apiFetch(`/orders/${code}/cancel`, { method: 'POST' });
         toast('Đã hủy đơn');
         loadOrders();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ==================== Settings ====================
+    async function loadSettings() {
+      try {
+        const s = await apiFetch('/settings');
+        document.getElementById('sBankId').value = s.bank_id || '';
+        document.getElementById('sBankCode').value = s.bank_code || '';
+        document.getElementById('sBankName').value = s.bank_name || '';
+        document.getElementById('sBankAccountNo').value = s.bank_account_no || '';
+        document.getElementById('sBankAccountName').value = s.bank_account_name || '';
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function saveSettings() {
+      try {
+        await apiFetch('/settings', {
+          method: 'PUT',
+          body: {
+            bank_id: document.getElementById('sBankId').value,
+            bank_code: document.getElementById('sBankCode').value,
+            bank_name: document.getElementById('sBankName').value,
+            bank_account_no: document.getElementById('sBankAccountNo').value,
+            bank_account_name: document.getElementById('sBankAccountName').value,
+          },
+        });
+        toast('Đã lưu cài đặt thành công!');
       } catch (e) { toast(e.message, 'error'); }
     }
 
