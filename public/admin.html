@@ -749,6 +749,13 @@ Số Lượng Đang Hiện Có 10"
         <input type="number" id="pDeliveryHours" placeholder="24" min="1" value="24">
         <p class="hint">Hẹn giao trong bao nhiêu giờ sau thanh toán</p>
       </div>
+      <div id="customerFieldsGroup" class="form-group" style="display:none">
+        <label>Thông tin cần thu thập từ khách</label>
+        <div id="customerFieldBuilder"></div>
+        <button class="btn btn-sm btn-ghost" onclick="addCustomerFieldRow()" style="margin-top:8px">+ Thêm
+          trường</button>
+        <p class="hint">Định nghĩa thông tin khách cần cung cấp (VD: email, mật khẩu tài khoản...)</p>
+      </div>
       <div class="form-group">
         <label>Thời hạn sử dụng (ngày)</label>
         <input type="number" id="pSubscriptionDays" placeholder="365" min="0">
@@ -964,17 +971,27 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('pSubscriptionDays').value = product ? (product.subscription_days || '') : '';
       toggleProductTypeFields();
 
-      // Populate field builder
+      // Populate credential field builder
       const container = document.getElementById('fieldBuilder');
       container.innerHTML = '';
       if (product) {
         const fields = JSON.parse(product.credential_fields || '[]');
         fields.forEach(f => addFieldRow(f.key, f.label, f.icon || '📋'));
       } else {
-        // Defaults for new product
         addFieldRow('username', 'Tài khoản', '👤');
         addFieldRow('password', 'Mật khẩu', '🔑');
       }
+
+      // Populate customer field builder (for invite/preorder)
+      const custContainer = document.getElementById('customerFieldBuilder');
+      custContainer.innerHTML = '';
+      if (product && (pType === 'invite' || pType === 'preorder')) {
+        const custFields = JSON.parse(product.customer_fields || '[{"key":"email","label":"Email","type":"email"}]');
+        custFields.forEach(f => addCustomerFieldRow(f.key, f.label, f.type || 'text'));
+      } else if (!product) {
+        addCustomerFieldRow('email', 'Email', 'email');
+      }
+
       document.getElementById('productModal').classList.add('active');
     }
 
@@ -988,6 +1005,35 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('inviteSlotsGroup').style.display = type === 'invite' ? '' : 'none';
       document.getElementById('deliveryHoursGroup').style.display = type === 'preorder' ? '' : 'none';
       document.getElementById('credentialFieldsGroup').style.display = type === 'credential' ? '' : 'none';
+      document.getElementById('customerFieldsGroup').style.display = (type === 'invite' || type === 'preorder') ? '' : 'none';
+    }
+
+    function addCustomerFieldRow(key = '', label = '', type = 'text') {
+      const container = document.getElementById('customerFieldBuilder');
+      const row = document.createElement('div');
+      row.className = 'field-row';
+      row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+      row.innerHTML = `
+        <select style="padding:6px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);min-width:80px" value="${type}">
+          <option value="email" ${type === 'email' ? 'selected' : ''}>Email</option>
+          <option value="text" ${type === 'text' ? 'selected' : ''}>Text</option>
+        </select>
+        <input value="${key}" placeholder="key" style="flex:1;padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
+        <input value="${label}" placeholder="Nhãn (VD: Email, Mật khẩu)" style="flex:1;padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary)">
+        <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">×</button>
+      `;
+      container.appendChild(row);
+    }
+
+    function getCustomerFieldsFromBuilder() {
+      const rows = document.querySelectorAll('#customerFieldBuilder .field-row');
+      return Array.from(rows).map(r => {
+        const select = r.querySelector('select');
+        const inputs = r.querySelectorAll('input');
+        const key = inputs[0].value.trim();
+        const label = inputs[1].value.trim() || key;
+        return { key, label, type: select.value };
+      }).filter(f => f.key);
     }
 
     async function saveProduct() {
@@ -1001,6 +1047,7 @@ Số Lượng Đang Hiện Có 10"
         note: document.getElementById('pNote').value,
         productType,
         credentialFields: productType === 'credential' ? credentialFields : undefined,
+        customerFields: (productType === 'invite' || productType === 'preorder') ? getCustomerFieldsFromBuilder() : undefined,
         inviteSlots: productType === 'invite' ? (document.getElementById('pInviteSlots').value || 0) : undefined,
         deliveryHours: productType === 'preorder' ? (document.getElementById('pDeliveryHours').value || 24) : undefined,
         subscriptionDays: document.getElementById('pSubscriptionDays').value || null,

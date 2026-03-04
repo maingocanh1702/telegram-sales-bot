@@ -1,116 +1,159 @@
 const db = require('../database');
 
-// Track users waiting for email input: { pending data, collectedEmails[] }
-const waitingForEmail = new Map();
+// Track users waiting for info input
+const waitingForInfo = new Map();
 
 /**
- * Handle email collection for invite/preorder products.
- * Collects emails one-by-one (progressive UX).
+ * Handle customer info collection for invite/preorder products.
+ * Collects configurable fields (email, password, etc.) per unit.
+ * 
+ * State shape:
+ * {
+ *   pending: { original event data },
+ *   fields: [{key, label, type}],  // from product.customer_fields
+ *   quantity: number,
+ *   units: [{email: "a@b.com", password: "123"}, ...],  // completed units
+ *   currentUnit: {email: "a@b.com"},  // partially filled current unit
+ *   currentFieldIndex: 0,  // which field we're asking for
+ *   currentUnitIndex: 0,   // which unit (0-based)
+ * }
  */
 function setupEmailHandler(bot) {
     bot.on('email_needed', (data) => {
-        startEmailCollection(bot, data);
+        startInfoCollection(bot, data);
     });
 
     bot.on('message', (msg) => {
         const userId = msg.from.id;
-        if (!waitingForEmail.has(userId)) return;
+        if (!waitingForInfo.has(userId)) return;
         if (!msg.text) return;
 
-        const state = waitingForEmail.get(userId);
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const state = waitingForInfo.get(userId);
+        const field = state.fields[state.currentFieldIndex];
+        const input = msg.text.trim();
 
-        // Parse input: could be single email or comma-separated batch
-        const inputEmails = msg.text.split(/[,;\n]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
+        // Validate email fields
+        if (field.type === 'email') {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(input)) {
+                bot.sendMessage(msg.chat.id,
+                    `❌ Email không hợp lệ. Vui lòng nhập lại **${field.label}**:`,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+        }
 
-        // Validate each email
-        const invalid = inputEmails.filter(e => !emailRegex.test(e));
-        if (invalid.length > 0) {
+        // Validate non-empty
+        if (!input) {
             bot.sendMessage(msg.chat.id,
-                `❌ Email không hợp lệ: ${invalid.join(', ')}\n\nVui lòng nhập lại:`,
+                `❌ Vui lòng nhập **${field.label}**:`,
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        // Check for duplicates within input + already collected
-        const allEmails = [...state.collected, ...inputEmails];
-        const dupes = inputEmails.filter(e => state.collected.includes(e));
-        if (dupes.length > 0) {
-            bot.sendMessage(msg.chat.id,
-                `❌ Email **${dupes.join(', ')}** đã nhập rồi. Vui lòng nhập email khác:`,
-                { parse_mode: 'Markdown' }
-            );
-            return;
+        // Save field value
+        state.currentUnit[field.key] = input;
+        state.currentFieldIndex++;
+
+        // Check if current unit is complete
+        if (state.currentFieldIndex >= state.fields.length) {
+            // Unit complete — save it
+            state.units.push({ ...state.currentUnit });
+            state.currentUnit = {};
+            state.currentFieldIndex = 0;
+            state.currentUnitIndex++;
+
+            // Check if all units done
+            if (state.currentUnitIndex >= state.quantity) {
+                // All done — proceed to order
+                const customerInfo = state.quantity === 1 && state.fields.length === 1 && state.fields[0].type === 'email'
+                    ? state.units.map(u => u[state.fields[0].key]).join(', ')
+                    : JSON.stringify(state.units);
+
+                waitingForInfo.delete(userId);
+
+                bot.emit('quantity_selected', {
+                    ...state.pending,
+                    customerEmail: customerInfo,
+                });
+                return;
+            }
         }
 
-        // Check if entering too many before adding
-        const remaining = state.quantity - state.collected.length;
-        if (inputEmails.length > remaining) {
-            const collectedList = state.collected.length > 0
-                ? `\n📧 Đã nhập:\n${state.collected.map((e, i) => `  ${i + 1}. ${e}`).join('\n')}\n` : '';
-            bot.sendMessage(msg.chat.id,
-                `❌ Bạn nhập **${inputEmails.length}** email nhưng chỉ cần thêm **${remaining}** email nữa.${collectedList}\n` +
-                `Vui lòng nhập đúng **${remaining}** email:`,
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-
-        // Add valid emails
-        state.collected.push(...inputEmails);
-        const newRemaining = state.quantity - state.collected.length;
-
-        if (newRemaining > 0) {
-            // Still need more emails
-            const collectedList = state.collected.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
-            bot.sendMessage(msg.chat.id,
-                `✅ Đã ghi nhận!\n\n` +
-                `📧 Email đã nhập:\n${collectedList}\n\n` +
-                `📝 Còn thiếu **${newRemaining}** email nữa. Vui lòng nhập tiếp:`,
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-
-        // All emails collected — proceed
-        const emails = state.collected.join(', ');
-        waitingForEmail.delete(userId);
-
-        bot.emit('quantity_selected', {
-            ...state.pending,
-            customerEmail: emails,
-        });
+        // Ask for next field
+        askNextField(bot, msg.chat.id, state);
     });
 }
 
 /**
- * Start collecting emails for a user
+ * Start collecting customer info
  */
-function startEmailCollection(bot, data) {
+function startInfoCollection(bot, data) {
     const { chatId, userId, productId, quantity } = data;
     const product = db.getProductById(productId);
     if (!product) return;
 
     const qty = quantity || 1;
+    const fields = JSON.parse(product.customer_fields || '[{"key":"email","label":"Email","type":"email"}]');
 
-    waitingForEmail.set(userId, {
+    waitingForInfo.set(userId, {
         pending: data,
-        collected: [],
+        fields,
         quantity: qty,
+        units: [],
+        currentUnit: {},
+        currentFieldIndex: 0,
+        currentUnitIndex: 0,
     });
 
-    let text = `📧 **Nhập email** để nhận **${product.name}**:\n\n`;
+    // Show intro message
+    const fieldNames = fields.map(f => f.label).join(', ');
+    let text = `📋 **Cần thông tin để xử lý đơn hàng**\n`;
+    text += `📦 SP: **${product.name}**\n`;
+    text += `📝 Thông tin cần: **${fieldNames}**\n`;
     if (qty > 1) {
-        text += `📝 Cần **${qty} email**. Có thể nhập từng email hoặc nhập cùng lúc phân cách bằng dấu phẩy.\n\n`;
+        text += `🔢 Số lượng: **${qty}** (nhập thông tin cho từng tài khoản)\n`;
     }
-    text += `⚠️ Đảm bảo email chính xác — thông tin sẽ được gửi đến email này.`;
+    text += `\n`;
 
-    bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, text, { parse_mode: 'Markdown' }).then(() => {
+        const state = waitingForInfo.get(userId);
+        askNextField(bot, chatId, state);
+    });
+}
+
+/**
+ * Ask for the next field
+ */
+function askNextField(bot, chatId, state) {
+    const field = state.fields[state.currentFieldIndex];
+    const unitNum = state.currentUnitIndex + 1;
+    const totalUnits = state.quantity;
+
+    let prompt = '';
+    if (totalUnits > 1) {
+        prompt = `👤 **Tài khoản ${unitNum}/${totalUnits}** — Nhập **${field.label}**:`;
+    } else {
+        prompt = `👉 Nhập **${field.label}**:`;
+    }
+
+    // Show progress of current unit
+    const filledKeys = Object.keys(state.currentUnit);
+    if (filledKeys.length > 0) {
+        const progress = filledKeys.map(k => {
+            const f = state.fields.find(ff => ff.key === k);
+            return `  ✅ ${f ? f.label : k}: ${state.currentUnit[k]}`;
+        }).join('\n');
+        prompt = progress + '\n\n' + prompt;
+    }
+
+    bot.sendMessage(chatId, prompt, { parse_mode: 'Markdown' });
 }
 
 function isWaitingForEmail(userId) {
-    return waitingForEmail.has(userId);
+    return waitingForInfo.has(userId);
 }
 
 module.exports = { setupEmailHandler, isWaitingForEmail };
