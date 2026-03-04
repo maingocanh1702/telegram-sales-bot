@@ -855,20 +855,28 @@
     async function loadProducts() {
       try {
         productsCache = await apiFetch('/products');
-        let html = '<table><tr><th>ID</th><th>Tên SP</th><th>Giá</th><th>Available</th><th>Sold</th><th>Fields</th><th>Trạng thái</th><th></th></tr>';
+        let html = '<table><tr><th>ID</th><th>Tên SP</th><th>Giá</th><th>Available</th><th>Sold</th><th>Chi tiết</th><th>Trạng thái</th><th></th></tr>';
         if (productsCache.length === 0) {
           html += '<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-rounded">inventory_2</span><p>Chưa có sản phẩm</p></div></td></tr>';
         }
         for (const p of productsCache) {
-          const fields = JSON.parse(p.credential_fields || '[]');
-          const fieldLabels = fields.map(f => f.label).join(', ');
+          let typeInfo = '';
+          const pType = p.product_type || 'credential';
+          if (pType === 'credential') {
+            const fields = JSON.parse(p.credential_fields || '[]');
+            typeInfo = `🔑 ${fields.map(f => f.label).join(', ')}`;
+          } else if (pType === 'invite') {
+            typeInfo = `📧 Invite · ${p.invite_slots || 0} slots`;
+          } else if (pType === 'preorder') {
+            typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h`;
+          }
           html += `<tr>
             <td>${p.id}</td>
             <td><strong>${p.name}</strong></td>
             <td class="money">${formatMoney(p.price)}</td>
             <td><span class="badge badge-success">${p.available}</span></td>
             <td>${p.sold}</td>
-            <td style="font-size:12px;color:var(--text-muted)">${fieldLabels}</td>
+            <td style="font-size:12px;color:var(--text-muted)">${typeInfo}</td>
             <td>${p.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-muted">Inactive</span>'}</td>
             <td>
               <button class="btn btn-sm btn-ghost" onclick="editProduct(${p.id})">Sửa</button>
