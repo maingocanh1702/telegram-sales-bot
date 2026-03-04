@@ -219,6 +219,42 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // ==================== Settings ====================
+
+    app.get('/api/admin/settings', (req, res) => {
+        try {
+            const settings = db.getAllSettings();
+            const config = require('../config');
+            // Return merged: DB values override env vars
+            res.json({
+                bank_id: settings.bank_id || config.bank.id || '',
+                bank_code: settings.bank_code || config.bank.code || '',
+                bank_name: settings.bank_name || config.bank.name || '',
+                bank_account_no: settings.bank_account_no || config.bank.accountNo || '',
+                bank_account_name: settings.bank_account_name || config.bank.accountName || '',
+            });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.put('/api/admin/settings', (req, res) => {
+        try {
+            const allowed = ['bank_id', 'bank_code', 'bank_name', 'bank_account_no', 'bank_account_name'];
+            const body = req.body;
+            let count = 0;
+            for (const key of allowed) {
+                if (body[key] !== undefined) {
+                    db.setSetting(key, body[key]);
+                    count++;
+                }
+            }
+            res.json({ message: `${count} settings updated` });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     console.log('🔧 Admin API ready at /api/admin/*');
 }
 

@@ -98,6 +98,15 @@ async function initDatabase() {
     )
   `);
 
+    // Settings (key-value)
+    db.run(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
     saveDatabase();
     console.log(`✅ Database initialized (${DB_PATH})`);
     return db;
@@ -372,4 +381,50 @@ module.exports = {
     getExpiredOrders,
     getRecentOrders,
     getAllProductsStock,
+    // Settings
+    getSetting,
+    setSetting,
+    getAllSettings,
+    getBankConfig,
 };
+
+// ==================== Settings ====================
+
+function getSetting(key) {
+    const result = db.exec('SELECT value FROM settings WHERE key = ?', [key]);
+    return result.length > 0 ? result[0].values[0][0] : null;
+}
+
+function setSetting(key, value) {
+    db.run(
+        'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))',
+        [key, value]
+    );
+    saveDatabase();
+}
+
+function getAllSettings() {
+    const stmt = db.prepare('SELECT key, value FROM settings');
+    const result = {};
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        result[row.key] = row.value;
+    }
+    stmt.free();
+    return result;
+}
+
+/**
+ * Get bank config: DB settings first, fallback to env vars
+ */
+function getBankConfig() {
+    const config = require('./config');
+    const settings = getAllSettings();
+    return {
+        id: settings.bank_id || config.bank.id,
+        code: settings.bank_code || config.bank.code,
+        name: settings.bank_name || config.bank.name,
+        accountNo: settings.bank_account_no || config.bank.accountNo,
+        accountName: settings.bank_account_name || config.bank.accountName,
+    };
+}

@@ -80,6 +80,7 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
 
         const qrUrl = generateQRUrl(totalAmount, orderCode);
         const minutesLeft = Math.ceil((new Date(expiresAt) - Date.now()) / 60000);
+        const bank = db.getBankConfig();
 
         let text = `🧾 **ĐƠN HÀNG MỚI: #${orderCode}**\n\n`;
         text += `📦 SP: ${product.name}\n`;
@@ -87,8 +88,8 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
         text += `💰 Tổng: **${formatPrice(totalAmount)}**\n\n`;
         text += `⏰ Hết hạn sau: ${minutesLeft} phút\n\n`;
         text += `📌 **Thông tin thanh toán:**\n`;
-        text += `• Ngân hàng: **${config.bank.name}**\n`;
-        text += `• Số tài khoản: **${config.bank.accountNo}**\n`;
+        text += `• Ngân hàng: **${bank.name}**\n`;
+        text += `• Số tài khoản: **${bank.accountNo}**\n`;
         text += `• Nội dung CK: **${orderCode}**\n\n`;
         text += `👇 Quét mã QR bên dưới để thanh toán:`;
 
