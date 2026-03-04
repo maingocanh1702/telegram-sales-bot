@@ -26,7 +26,6 @@ function setupQuantityHandler(bot) {
             const quantity = parseInt(parts[2]);
             bot.answerCallbackQuery(query.id);
 
-            // Emit custom event for order handler to pick up
             bot.emit('quantity_selected', {
                 chatId: query.message.chat.id,
                 messageId: query.message.message_id,
@@ -50,26 +49,26 @@ function setupQuantityHandler(bot) {
     // Handle text input for custom quantity
     bot.on('message', (msg) => {
         const userId = msg.from.id;
-        if (waitingForQuantity.has(userId)) {
-            const { productId, messageId } = waitingForQuantity.get(userId);
-            const quantity = parseInt(msg.text);
+        if (!waitingForQuantity.has(userId)) return;
 
-            waitingForQuantity.delete(userId);
+        const { productId } = waitingForQuantity.get(userId);
+        const quantity = parseInt(msg.text);
 
-            if (isNaN(quantity) || quantity <= 0) {
-                bot.sendMessage(msg.chat.id, '❌ Số lượng không hợp lệ. Vui lòng thử lại.');
-                return;
-            }
+        waitingForQuantity.delete(userId);
 
-            bot.emit('quantity_selected', {
-                chatId: msg.chat.id,
-                messageId: null,
-                userId: msg.from.id,
-                username: msg.from.username || msg.from.first_name,
-                productId,
-                quantity,
-            });
+        if (isNaN(quantity) || quantity <= 0) {
+            bot.sendMessage(msg.chat.id, '❌ Số lượng không hợp lệ. Vui lòng thử lại.');
+            return;
         }
+
+        bot.emit('quantity_selected', {
+            chatId: msg.chat.id,
+            messageId: null,
+            userId: msg.from.id,
+            username: msg.from.username || msg.from.first_name,
+            productId,
+            quantity,
+        });
     });
 }
 
@@ -80,7 +79,8 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
     const product = db.getProductById(productId);
     if (!product) return;
 
-    let text = `🔢 Chọn số lượng cho **${product.name}** - ${product.stock}/${product.stock} - ${formatPrice(product.price)}:\n\n`;
+    let text = `🔢 Chọn số lượng cho **${product.name}**:\n`;
+    text += `💰 Giá: ${formatPrice(product.price)} | 📊 Tồn kho: ${product.stock}\n\n`;
     text += '👇 Chọn số lượng nhanh hoặc nhập tùy chỉnh:';
 
     const keyboard = [
@@ -103,6 +103,13 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
             return isNaN(qty) || qty <= product.stock;
         });
         if (keyboard[1].length === 0) keyboard.splice(1, 1);
+    }
+
+    if (product.stock < 2) {
+        keyboard[0] = keyboard[0].filter((btn) => {
+            const qty = parseInt(btn.text);
+            return isNaN(qty) || qty <= product.stock;
+        });
     }
 
     bot.editMessageText(text, {

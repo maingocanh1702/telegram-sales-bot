@@ -13,19 +13,6 @@ function setupWebhookHandler(app, bot) {
 
             console.log('📥 SePay Webhook received:', JSON.stringify(payload, null, 2));
 
-            // SePay webhook fields:
-            // - id: transaction id
-            // - gateway: bank gateway
-            // - transactionDate: date string
-            // - accountNumber: bank account number
-            // - transferType: "in" or "out"
-            // - transferAmount: amount
-            // - accumulated: accumulated balance
-            // - code: payment code extracted from content
-            // - content: full content of transfer
-            // - referenceCode: reference code
-            // - description: description
-
             // Only process incoming transfers
             if (payload.transferType !== 'in') {
                 console.log('⏭️ Skipping non-incoming transfer');
@@ -37,20 +24,17 @@ function setupWebhookHandler(app, bot) {
             const content = (payload.content || '').toUpperCase();
             const code = (payload.code || '').toUpperCase();
 
-            // Try to find order code in content or code field
+            // Try to find order code in SePay's extracted code first
             let orderCode = null;
 
-            // Method 1: Use SePay's extracted code
             if (code && code.startsWith('ORD')) {
                 orderCode = code;
             }
 
-            // Method 2: Search in content for ORD pattern
+            // Fallback: search in full content
             if (!orderCode) {
                 const match = content.match(/ORD\d{13,20}/);
-                if (match) {
-                    orderCode = match[0];
-                }
+                if (match) orderCode = match[0];
             }
 
             if (!orderCode) {
@@ -72,10 +56,7 @@ function setupWebhookHandler(app, bot) {
 
             // Verify amount
             if (amount < order.total_amount) {
-                console.log(
-                    `⚠️ Amount mismatch for ${orderCode}: ` +
-                    `received ${amount}, expected ${order.total_amount}`
-                );
+                console.log(`⚠️ Amount mismatch for ${orderCode}: received ${amount}, expected ${order.total_amount}`);
 
                 bot.sendMessage(order.telegram_user_id,
                     `⚠️ Đơn hàng #${orderCode}: Số tiền nhận được (${amount.toLocaleString('vi-VN')} đ) ` +
@@ -102,7 +83,7 @@ function setupWebhookHandler(app, bot) {
 
             // Notify admin
             bot.sendMessage(config.adminTelegramId,
-                `💰 Đơn hàng #${orderCode} đã thanh toán thành công!\n` +
+                `💰 Đơn hàng #${orderCode} đã thanh toán!\n` +
                 `SP: ${order.product_name} x${order.quantity}\n` +
                 `Số tiền: ${amount.toLocaleString('vi-VN')} đ\n` +
                 `Khách: @${order.telegram_username || order.telegram_user_id}`
