@@ -44,30 +44,33 @@ function setupEmailHandler(bot) {
             return;
         }
 
-        // Add valid emails
-        state.collected.push(...inputEmails);
+        // Check if entering too many before adding
         const remaining = state.quantity - state.collected.length;
-
-        if (remaining > 0) {
-            // Still need more emails
-            const collectedList = state.collected.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
+        if (inputEmails.length > remaining) {
+            const collectedList = state.collected.length > 0
+                ? `\n📧 Đã nhập:\n${state.collected.map((e, i) => `  ${i + 1}. ${e}`).join('\n')}\n` : '';
             bot.sendMessage(msg.chat.id,
-                `✅ Đã ghi nhận!\n\n` +
-                `📧 Email đã nhập:\n${collectedList}\n\n` +
-                `📝 Còn thiếu **${remaining}** email nữa. Vui lòng nhập tiếp:`,
+                `❌ Bạn nhập **${inputEmails.length}** email nhưng chỉ cần thêm **${remaining}** email nữa.${collectedList}\n` +
+                `Vui lòng nhập đúng **${remaining}** email:`,
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        if (state.collected.length > state.quantity) {
-            // Too many emails — trim and warn
-            const excess = state.collected.length - state.quantity;
-            state.collected = state.collected.slice(0, state.quantity);
+        // Add valid emails
+        state.collected.push(...inputEmails);
+        const newRemaining = state.quantity - state.collected.length;
+
+        if (newRemaining > 0) {
+            // Still need more emails
+            const collectedList = state.collected.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
             bot.sendMessage(msg.chat.id,
-                `⚠️ Bạn nhập thừa ${excess} email. Chỉ lấy ${state.quantity} email đầu tiên.`,
+                `✅ Đã ghi nhận!\n\n` +
+                `📧 Email đã nhập:\n${collectedList}\n\n` +
+                `📝 Còn thiếu **${newRemaining}** email nữa. Vui lòng nhập tiếp:`,
                 { parse_mode: 'Markdown' }
             );
+            return;
         }
 
         // All emails collected — proceed
