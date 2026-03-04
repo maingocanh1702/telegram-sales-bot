@@ -219,13 +219,12 @@ function setupAdminAPI(app, bot) {
         }
     });
 
-    // ==================== Settings ====================
+    // ==================== Settings / Bank Accounts ====================
 
     app.get('/api/admin/settings', (req, res) => {
         try {
             const settings = db.getAllSettings();
             const config = require('../config');
-            // Return merged: DB values override env vars
             res.json({
                 bank_id: settings.bank_id || config.bank.id || '',
                 bank_code: settings.bank_code || config.bank.code || '',
@@ -250,6 +249,46 @@ function setupAdminAPI(app, bot) {
                 }
             }
             res.json({ message: `${count} settings updated` });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Bank accounts CRUD
+    app.get('/api/admin/bank-accounts', (req, res) => {
+        try {
+            res.json(db.getAllBankAccounts());
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.post('/api/admin/bank-accounts', (req, res) => {
+        try {
+            const { bank_id, bank_code, bank_name, account_no, account_name } = req.body;
+            if (!bank_code || !account_no || !account_name) {
+                return res.status(400).json({ error: true, message: 'Thiếu thông tin bắt buộc', code: 'MISSING_FIELDS' });
+            }
+            const id = db.addBankAccount({ bank_id, bank_code, bank_name, account_no, account_name });
+            res.json({ message: 'Đã thêm tài khoản', id });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.post('/api/admin/bank-accounts/:id/activate', (req, res) => {
+        try {
+            db.setActiveBankAccount(parseInt(req.params.id));
+            res.json({ message: 'Đã kích hoạt tài khoản' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.delete('/api/admin/bank-accounts/:id', (req, res) => {
+        try {
+            db.deleteBankAccount(parseInt(req.params.id));
+            res.json({ message: 'Đã xóa tài khoản' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }

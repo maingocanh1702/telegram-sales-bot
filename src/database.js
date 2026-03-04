@@ -107,6 +107,20 @@ async function initDatabase() {
     )
   `);
 
+    // Bank accounts (multiple saved, one active)
+    db.run(`
+    CREATE TABLE IF NOT EXISTS bank_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bank_id TEXT NOT NULL,
+      bank_code TEXT NOT NULL,
+      bank_name TEXT NOT NULL,
+      account_no TEXT NOT NULL,
+      account_name TEXT NOT NULL,
+      is_active INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
     saveDatabase();
     console.log(`✅ Database initialized (${DB_PATH})`);
     return db;
@@ -386,6 +400,11 @@ module.exports = {
     setSetting,
     getAllSettings,
     getBankConfig,
+    // Bank accounts
+    addBankAccount,
+    getAllBankAccounts,
+    setActiveBankAccount,
+    deleteBankAccount,
 };
 
 // ==================== Settings ====================
@@ -414,17 +433,74 @@ function getAllSettings() {
     return result;
 }
 
+// ==================== Bank Accounts ====================
+
+function addBankAccount(data) {
+    db.run(
+        'INSERT INTO bank_accounts (bank_id, bank_code, bank_name, account_no, account_name, is_active) VALUES (?, ?, ?, ?, ?, 0)',
+        [data.bank_id, data.bank_code, data.bank_name, data.account_no, data.account_name]
+    );
+    const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+    // If first account, auto-activate
+    const count = db.exec('SELECT COUNT(*) FROM bank_accounts')[0].values[0][0];
+    if (count === 1) {
+        db.run('UPDATE bank_accounts SET is_active = 1 WHERE id = ?', [id]);
+    }
+    saveDatabase();
+    return id;
+}
+
+function getAllBankAccounts() {
+    const stmt = db.prepare('SELECT * FROM bank_accounts ORDER BY is_active DESC, created_at DESC');
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function setActiveBankAccount(id) {
+    db.run('UPDATE bank_accounts SET is_active = 0');
+    db.run('UPDATE bank_accounts SET is_active = 1 WHERE id = ?', [id]);
+    saveDatabase();
+}
+
+function deleteBankAccount(id) {
+    const wasActive = db.exec('SELECT is_active FROM bank_accounts WHERE id = ?', [id]);
+    db.run('DELETE FROM bank_accounts WHERE id = ?', [id]);
+    // If deleted was active, activate the first remaining
+    if (wasActive.length > 0 && wasActive[0].values[0][0]) {
+        const remaining = db.exec('SELECT id FROM bank_accounts LIMIT 1');
+        if (remaining.length > 0) {
+            db.run('UPDATE bank_accounts SET is_active = 1 WHERE id = ?', [remaining[0].values[0][0]]);
+        }
+    }
+    saveDatabase();
+}
+
 /**
- * Get bank config: DB settings first, fallback to env vars
+ * Get bank config: active bank account from DB first, fallback to env vars
  */
 function getBankConfig() {
     const config = require('./config');
-    const settings = getAllSettings();
+    const result = db.exec('SELECT * FROM bank_accounts WHERE CAST(is_active AS INTEGER) = 1 LIMIT 1');
+    if (result.length > 0 && result[0].values.length > 0) {
+        const cols = result[0].columns;
+        const vals = result[0].values[0];
+        const row = {};
+        cols.forEach((c, i) => { row[c] = vals[i]; });
+        return {
+            id: row.bank_id,
+            code: row.bank_code,
+            name: row.bank_name,
+            accountNo: row.account_no,
+            accountName: row.account_name,
+        };
+    }
     return {
-        id: settings.bank_id || config.bank.id,
-        code: settings.bank_code || config.bank.code,
-        name: settings.bank_name || config.bank.name,
-        accountNo: settings.bank_account_no || config.bank.accountNo,
-        accountName: settings.bank_account_name || config.bank.accountName,
+        id: config.bank.id,
+        code: config.bank.code,
+        name: config.bank.name,
+        accountNo: config.bank.accountNo,
+        accountName: config.bank.accountName,
     };
 }

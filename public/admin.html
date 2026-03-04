@@ -633,34 +633,45 @@
       </div>
 
       <div class="section" id="sec-settings">
-        <div class="page-header">
-          <h1>Cài đặt</h1>
-          <p>Cấu hình thông tin thanh toán</p>
-        </div>
-        <div class="card" style="padding:24px">
-          <h3 style="margin-bottom:16px">🏦 Thông tin ngân hàng</h3>
-          <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px">Thay đổi tài khoản nhận thanh toán.
-            Áp dụng ngay cho đơn hàng mới mà không cần deploy lại.</p>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div class="form-group"><label>Mã ngân hàng (BIN)</label><input id="sBankId" placeholder="970423"></div>
-            <div class="form-group"><label>Mã ngắn NH</label><input id="sBankCode" placeholder="TPB"></div>
-            <div class="form-group"><label>Tên ngân hàng</label><input id="sBankName" placeholder="TPBank"></div>
-            <div class="form-group"><label>Số tài khoản</label><input id="sBankAccountNo" placeholder="02635252601">
-            </div>
-            <div class="form-group" style="grid-column:span 2"><label>Chủ tài khoản</label><input id="sBankAccountName"
-                placeholder="MAI NGOC ANH"></div>
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <h1>Cài đặt</h1>
+            <p>Quản lý tài khoản ngân hàng nhận thanh toán</p>
           </div>
-          <div style="margin-top:20px;display:flex;gap:8px">
-            <button class="btn btn-primary" onclick="saveSettings()"><span class="material-symbols-rounded"
-                style="font-size:16px">save</span> Lưu cài đặt</button>
-            <button class="btn btn-ghost" onclick="loadSettings()">Hoàn tác</button>
-          </div>
-          <p class="hint" style="margin-top:12px">💡 Tra mã BIN ngân hàng tại <a
-              href="https://www.vietqr.io/danh-sach-ngan-hang" target="_blank" style="color:var(--accent)">vietqr.io</a>
-          </p>
+          <button class="btn btn-primary" onclick="openBankModal()">
+            <span class="material-symbols-rounded" style="font-size:16px">add</span> Thêm TK
+          </button>
         </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>🏦 Tài khoản ngân hàng</h3>
+          </div>
+          <div id="bankAccountsList"></div>
+        </div>
+        <p class="hint" style="margin-top:8px">💡 Tra mã BIN ngân hàng tại <a
+            href="https://www.vietqr.io/danh-sach-ngan-hang" target="_blank" style="color:var(--accent)">vietqr.io</a>.
+          TK đang active sẽ được dùng cho đơn hàng mới.</p>
       </div>
     </main>
+  </div>
+
+  <!-- Bank Account Modal -->
+  <div class="modal-overlay" id="bankModal">
+    <div class="modal">
+      <h3>Thêm tài khoản ngân hàng</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label>Mã BIN</label><input id="bBankId" placeholder="970423"></div>
+        <div class="form-group"><label>Mã ngắn NH</label><input id="bBankCode" placeholder="TPB"></div>
+        <div class="form-group"><label>Tên ngân hàng</label><input id="bBankName" placeholder="TPBank"></div>
+        <div class="form-group"><label>Số tài khoản</label><input id="bAccountNo" placeholder="02635252601"></div>
+        <div class="form-group" style="grid-column:span 2"><label>Chủ tài khoản</label><input id="bAccountName"
+            placeholder="MAI NGOC ANH"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('bankModal')">Hủy</button>
+        <button class="btn btn-primary" onclick="saveBankAccount()">Thêm</button>
+      </div>
+    </div>
   </div>
 
   <!-- Product Modal -->
@@ -784,7 +795,7 @@
       if (name === 'products') loadProducts();
       if (name === 'credentials') { populateProductSelects(); loadCredentials(); }
       if (name === 'orders') loadOrders();
-      if (name === 'settings') loadSettings();
+      if (name === 'settings') loadBankAccounts();
     }
 
     // ==================== Dashboard ====================
@@ -1108,31 +1119,75 @@
       } catch (e) { toast(e.message, 'error'); }
     }
 
-    // ==================== Settings ====================
-    async function loadSettings() {
+    // ==================== Bank Accounts ====================
+    async function loadBankAccounts() {
       try {
-        const s = await apiFetch('/settings');
-        document.getElementById('sBankId').value = s.bank_id || '';
-        document.getElementById('sBankCode').value = s.bank_code || '';
-        document.getElementById('sBankName').value = s.bank_name || '';
-        document.getElementById('sBankAccountNo').value = s.bank_account_no || '';
-        document.getElementById('sBankAccountName').value = s.bank_account_name || '';
+        const accounts = await apiFetch('/bank-accounts');
+        if (accounts.length === 0) {
+          document.getElementById('bankAccountsList').innerHTML = '<div class="empty-state"><span class="material-symbols-rounded">account_balance</span><p>Chưa có tài khoản ngân hàng</p><p style="margin-top:8px"><button class="btn btn-primary" onclick="openBankModal()">Thêm tài khoản đầu tiên</button></p></div>';
+          return;
+        }
+        let html = '<table><tr><th>Ngân hàng</th><th>Số TK</th><th>Chủ TK</th><th>Trạng thái</th><th></th></tr>';
+        for (const a of accounts) {
+          html += `<tr>
+            <td><strong>${a.bank_name}</strong> <span style="color:var(--text-muted);font-size:12px">(${a.bank_code})</span></td>
+            <td><code>${a.account_no}</code></td>
+            <td>${a.account_name}</td>
+            <td>${a.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-muted">Inactive</span>'}</td>
+            <td style="white-space:nowrap">
+              ${!a.is_active ? `<button class="btn btn-sm btn-success" onclick="activateBank(${a.id})">Kích hoạt</button> ` : ''}
+              <button class="btn btn-sm btn-danger" onclick="deleteBank(${a.id})">Xóa</button>
+            </td>
+          </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('bankAccountsList').innerHTML = html;
       } catch (e) { toast(e.message, 'error'); }
     }
 
-    async function saveSettings() {
+    function openBankModal() {
+      document.getElementById('bBankId').value = '';
+      document.getElementById('bBankCode').value = '';
+      document.getElementById('bBankName').value = '';
+      document.getElementById('bAccountNo').value = '';
+      document.getElementById('bAccountName').value = '';
+      document.getElementById('bankModal').classList.add('active');
+    }
+
+    async function saveBankAccount() {
+      const body = {
+        bank_id: document.getElementById('bBankId').value,
+        bank_code: document.getElementById('bBankCode').value,
+        bank_name: document.getElementById('bBankName').value,
+        account_no: document.getElementById('bAccountNo').value,
+        account_name: document.getElementById('bAccountName').value,
+      };
+      if (!body.bank_code || !body.account_no || !body.account_name) {
+        toast('Vui lòng nhập đủ thông tin', 'error');
+        return;
+      }
       try {
-        await apiFetch('/settings', {
-          method: 'PUT',
-          body: {
-            bank_id: document.getElementById('sBankId').value,
-            bank_code: document.getElementById('sBankCode').value,
-            bank_name: document.getElementById('sBankName').value,
-            bank_account_no: document.getElementById('sBankAccountNo').value,
-            bank_account_name: document.getElementById('sBankAccountName').value,
-          },
-        });
-        toast('Đã lưu cài đặt thành công!');
+        await apiFetch('/bank-accounts', { method: 'POST', body });
+        toast('Đã thêm tài khoản');
+        closeModal('bankModal');
+        loadBankAccounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function activateBank(id) {
+      try {
+        await apiFetch(`/bank-accounts/${id}/activate`, { method: 'POST' });
+        toast('Đã kích hoạt tài khoản!');
+        loadBankAccounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function deleteBank(id) {
+      if (!confirm('Xóa tài khoản này?')) return;
+      try {
+        await apiFetch(`/bank-accounts/${id}`, { method: 'DELETE' });
+        toast('Đã xóa');
+        loadBankAccounts();
       } catch (e) { toast(e.message, 'error'); }
     }
 
