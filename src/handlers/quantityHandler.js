@@ -36,8 +36,8 @@ function setupQuantityHandler(bot) {
                 quantity,
             };
 
-            // Invite products need email first
-            if (product && product.product_type === 'invite') {
+            // Invite and preorder products need email first
+            if (product && (product.product_type === 'invite' || product.product_type === 'preorder')) {
                 bot.emit('email_needed', eventData);
             } else {
                 bot.emit('quantity_selected', eventData);
@@ -79,7 +79,7 @@ function setupQuantityHandler(bot) {
             quantity,
         };
 
-        if (product && product.product_type === 'invite') {
+        if (product && (product.product_type === 'invite' || product.product_type === 'preorder')) {
             bot.emit('email_needed', eventData);
         } else {
             bot.emit('quantity_selected', eventData);
