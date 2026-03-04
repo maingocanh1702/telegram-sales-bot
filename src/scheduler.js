@@ -1,5 +1,5 @@
-const db = require('../database');
-const config = require('../config');
+const db = require('./database');
+const config = require('./config');
 
 /**
  * Subscription expiry reminder scheduler
