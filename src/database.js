@@ -395,7 +395,12 @@ function getExpiredOrders() {
 }
 
 function getRecentOrders(limit = 20) {
-    const stmt = db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT ?');
+    const stmt = db.prepare(`
+      SELECT o.*, p.product_type 
+      FROM orders o 
+      LEFT JOIN products p ON o.product_id = p.id 
+      ORDER BY o.created_at DESC LIMIT ?
+    `);
     stmt.bind([limit]);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
