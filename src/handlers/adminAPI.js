@@ -55,6 +55,19 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    app.put('/api/admin/products/reorder', (req, res) => {
+        try {
+            const { orderedIds } = req.body;
+            if (!orderedIds || !Array.isArray(orderedIds)) {
+                return res.status(400).json({ error: true, message: 'orderedIds array required', code: 'VALIDATION_ERROR' });
+            }
+            db.reorderProducts(orderedIds);
+            res.json({ message: 'Products reordered' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     app.post('/api/admin/products', (req, res) => {
         try {
             const { name, price, description, note, categoryId, credentialFields, productType, inviteSlots, deliveryHours, subscriptionDays, customerFields } = req.body;
