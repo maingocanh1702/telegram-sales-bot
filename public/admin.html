@@ -528,6 +528,78 @@
       color: var(--text-muted);
       margin-top: 4px;
     }
+
+    /* Drag & Drop */
+    .drag-handle {
+      cursor: grab;
+      color: var(--text-muted);
+      font-size: 18px;
+      user-select: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.15s;
+      touch-action: manipulation;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+    }
+
+    .drag-handle:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    tr.dragging {
+      opacity: 0.4;
+      background: var(--accent) !important;
+    }
+
+    tr.drag-over td {
+      border-top: 2px solid var(--accent) !important;
+    }
+
+    tr.drag-over-below td {
+      border-bottom: 2px solid var(--accent) !important;
+    }
+
+    .move-btns {
+      display: none;
+      gap: 2px;
+    }
+
+    .move-btns button {
+      padding: 4px 8px;
+      font-size: 14px;
+      min-width: 36px;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .move-btns button:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    @media (max-width: 768px) {
+      .drag-handle {
+        display: none;
+      }
+
+      .move-btns {
+        display: inline-flex;
+      }
+    }
   </style>
 </head>
 
@@ -923,11 +995,12 @@ Số Lượng Đang Hiện Có 10"
     async function loadProducts() {
       try {
         productsCache = await apiFetch('/products');
-        let html = '<table><tr><th>ID</th><th>Tên SP</th><th>Giá</th><th>Available</th><th>Sold</th><th>Chi tiết</th><th>Trạng thái</th><th></th></tr>';
+        let html = '<table id="productsSortTable"><tr><th style="width:40px"></th><th>Tên SP</th><th>Giá</th><th>Available</th><th>Sold</th><th>Chi tiết</th><th>Trạng thái</th><th></th></tr>';
         if (productsCache.length === 0) {
-          html += '<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-rounded">inventory_2</span><p>Chưa có sản phẩm</p></div></td></tr>';
+          html += '<tr><td colspan="9"><div class="empty-state"><span class="material-symbols-rounded">inventory_2</span><p>Chưa có sản phẩm</p></div></td></tr>';
         }
-        for (const p of productsCache) {
+        for (let idx = 0; idx < productsCache.length; idx++) {
+          const p = productsCache[idx];
           let typeInfo = '';
           const pType = p.product_type || 'credential';
           const subInfo = p.subscription_days ? ` · ${p.subscription_days}d` : '';
@@ -939,8 +1012,14 @@ Số Lượng Đang Hiện Có 10"
           } else if (pType === 'preorder') {
             typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h${subInfo}`;
           }
-          html += `<tr>
-            <td>${p.id}</td>
+          html += `<tr data-product-id="${p.id}" draggable="false">
+            <td style="width:40px;padding:8px">
+              <span class="drag-handle" onmousedown="this.closest('tr').draggable=true" title="Kéo để sắp xếp">⠿</span>
+              <span class="move-btns">
+                <button onclick="moveProduct(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} title="Di chuyển lên">▲</button>
+                <button onclick="moveProduct(${idx}, 1)" ${idx === productsCache.length - 1 ? 'disabled' : ''} title="Di chuyển xuống">▼</button>
+              </span>
+            </td>
             <td><strong>${p.name}</strong></td>
             <td class="money">${formatMoney(p.price)}</td>
             <td><span class="badge badge-success">${p.available}</span></td>
@@ -955,7 +1034,119 @@ Số Lượng Đang Hiện Có 10"
         }
         html += '</table>';
         document.getElementById('productsTable').innerHTML = html;
+        initDragAndDrop();
       } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ---- Drag & Drop Reorder ----
+    let dragSrcRow = null;
+
+    function initDragAndDrop() {
+      const table = document.getElementById('productsSortTable');
+      if (!table) return;
+      const rows = table.querySelectorAll('tr[data-product-id]');
+      rows.forEach(row => {
+        row.addEventListener('dragstart', handleDragStart);
+        row.addEventListener('dragover', handleDragOver);
+        row.addEventListener('drop', handleDrop);
+        row.addEventListener('dragend', handleDragEnd);
+        row.addEventListener('dragleave', handleDragLeave);
+      });
+    }
+
+    function handleDragStart(e) {
+      dragSrcRow = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.productId);
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (this === dragSrcRow) return;
+      // Clear all drag-over classes
+      const table = document.getElementById('productsSortTable');
+      table.querySelectorAll('.drag-over, .drag-over-below').forEach(r => {
+        r.classList.remove('drag-over', 'drag-over-below');
+      });
+      // Determine position
+      const rect = this.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        this.classList.add('drag-over');
+      } else {
+        this.classList.add('drag-over-below');
+      }
+    }
+
+    function handleDragLeave(e) {
+      this.classList.remove('drag-over', 'drag-over-below');
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this === dragSrcRow) return;
+      const table = document.getElementById('productsSortTable');
+      const rect = this.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+
+      if (e.clientY < midY) {
+        this.parentNode.insertBefore(dragSrcRow, this);
+      } else {
+        this.parentNode.insertBefore(dragSrcRow, this.nextSibling);
+      }
+
+      // Clear all visual states
+      table.querySelectorAll('.drag-over, .drag-over-below').forEach(r => {
+        r.classList.remove('drag-over', 'drag-over-below');
+      });
+
+      saveProductOrder();
+    }
+
+    function handleDragEnd(e) {
+      this.classList.remove('dragging');
+      this.draggable = false;
+      const table = document.getElementById('productsSortTable');
+      if (table) {
+        table.querySelectorAll('.drag-over, .drag-over-below, .dragging').forEach(r => {
+          r.classList.remove('drag-over', 'drag-over-below', 'dragging');
+        });
+      }
+    }
+
+    async function saveProductOrder() {
+      const table = document.getElementById('productsSortTable');
+      const rows = table.querySelectorAll('tr[data-product-id]');
+      const orderedIds = Array.from(rows).map(r => parseInt(r.dataset.productId));
+      try {
+        await apiFetch('/products/reorder', { method: 'PUT', body: { orderedIds } });
+        toast('✅ Đã lưu thứ tự sản phẩm');
+        // Reload to refresh mobile buttons states
+        loadProducts();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function moveProduct(currentIdx, direction) {
+      const newIdx = currentIdx + direction;
+      if (newIdx < 0 || newIdx >= productsCache.length) return;
+      // Swap in cache
+      const temp = productsCache[currentIdx];
+      productsCache[currentIdx] = productsCache[newIdx];
+      productsCache[newIdx] = temp;
+      // Save order
+      const orderedIds = productsCache.map(p => p.id);
+      try {
+        await apiFetch('/products/reorder', { method: 'PUT', body: { orderedIds } });
+        toast('✅ Đã di chuyển sản phẩm');
+        loadProducts();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
     }
 
     // ---- Field Builder ----

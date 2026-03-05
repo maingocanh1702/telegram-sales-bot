@@ -138,6 +138,7 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN subscription_expires_at TEXT`,
         `ALTER TABLE orders ADD COLUMN expiry_reminded INTEGER DEFAULT 0`,
         `ALTER TABLE products ADD COLUMN customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]'`,
+        `ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -184,7 +185,7 @@ function getProducts() {
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE CAST(p.is_active AS INTEGER) = 1
-    ORDER BY c.sort_order, p.name
+    ORDER BY p.sort_order ASC, p.name ASC
   `);
     const results = [];
     while (stmt.step()) {
@@ -239,6 +240,13 @@ function addProduct(name, price, description = '', note = '', categoryId = null,
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
     return id;
+}
+
+function reorderProducts(orderedIds) {
+    for (let i = 0; i < orderedIds.length; i++) {
+        db.run('UPDATE products SET sort_order = ? WHERE id = ?', [i, parseInt(orderedIds[i])]);
+    }
+    saveDatabase();
 }
 
 function updateProduct(id, updates) {
@@ -434,7 +442,7 @@ function getAllProductsStock() {
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id)
            END as total
     FROM products p
-    ORDER BY p.is_active DESC, p.name
+    ORDER BY p.sort_order ASC, p.name ASC
   `);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
@@ -545,6 +553,7 @@ module.exports = {
     getProductById,
     addProduct,
     updateProduct,
+    reorderProducts,
     deleteProduct,
     getUniqueCustomerIds,
     getCustomerStats,
