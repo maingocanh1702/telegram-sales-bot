@@ -909,7 +909,7 @@ Số Lượng Đang Hiện Có 10"
 
   <!-- Order Credentials Modal -->
   <div class="modal-overlay" id="orderCredModal">
-    <div class="modal-content" style="max-width:600px">
+    <div class="modal" style="max-width:700px;max-height:80vh;overflow-y:auto">
       <h3 id="orderCredModalTitle">🔑 Tài khoản đã giao</h3>
       <div id="orderCredModalBody" style="margin:16px 0">⏳ Đang tải...</div>
       <div class="modal-actions">
@@ -1612,6 +1612,24 @@ Số Lượng Đang Hiện Có 10"
       } catch (e) { toast(e.message, 'error'); }
     }
 
+    // Copy credential value helper
+    function copyCredVal(el) {
+      const val = el.getAttribute('data-copy');
+      if (!val) return;
+      navigator.clipboard.writeText(val).then(() => {
+        toast('📋 Đã copy: ' + val.substring(0, 30) + (val.length > 30 ? '...' : ''));
+      }).catch(() => {
+        // Fallback for older browsers
+        const ta = document.createElement('textarea');
+        ta.value = val;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        toast('📋 Đã copy!');
+      });
+    }
+
     async function viewOrderCredentials(code) {
       document.getElementById('orderCredModal').classList.add('active');
       document.getElementById('orderCredModalTitle').textContent = `🔑 Tài khoản — #${code}`;
@@ -1645,27 +1663,19 @@ Số Lượng Đang Hiện Có 10"
         const allDataKeys = new Set();
         const parsedCreds = credentials.map(c => {
           let data = c.data;
-          // Handle case where data is a string
           if (typeof data === 'string') {
             try { data = JSON.parse(data); } catch { data = { value: data }; }
           }
-          // Handle case where data is an array (multiple creds in one)
-          if (Array.isArray(data)) {
-            data = { value: JSON.stringify(data) };
-          }
-          if (typeof data !== 'object' || data === null) {
-            data = { value: String(data) };
-          }
+          if (Array.isArray(data)) { data = { value: JSON.stringify(data) }; }
+          if (typeof data !== 'object' || data === null) { data = { value: String(data) }; }
           Object.keys(data).forEach(k => allDataKeys.add(k));
           return { ...c, parsedData: data };
         });
 
-        // Build columns: merge product fields with actual data keys
+        // Build columns from actual data keys with product field labels
         const columns = [];
         const fieldMap = {};
         (credentialFields || []).forEach(f => { fieldMap[f.key] = f; });
-
-        // First add fields that exist in actual data
         for (const key of allDataKeys) {
           const field = fieldMap[key];
           columns.push({
@@ -1673,14 +1683,10 @@ Số Lượng Đang Hiện Có 10"
             label: field ? `${field.icon || ''} ${field.label}` : key.charAt(0).toUpperCase() + key.slice(1),
           });
         }
-
-        // If no columns detected, show raw
-        if (columns.length === 0) {
-          columns.push({ key: '_raw', label: 'Dữ liệu' });
-        }
+        if (columns.length === 0) { columns.push({ key: '_raw', label: 'Dữ liệu' }); }
 
         // Credentials table
-        html += '<table><tr><th>#</th>';
+        html += '<table style="width:100%"><tr><th style="width:40px">#</th>';
         columns.forEach(col => { html += `<th>${col.label}</th>`; });
         html += '</tr>';
 
@@ -1691,9 +1697,8 @@ Số Lượng Đang Hiện Có 10"
             if (val === undefined || val === null) val = '';
             const strVal = String(val);
             if (strVal) {
-              // Escape for onclick
-              const escaped = strVal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-              html += `<td><code style="cursor:pointer;word-break:break-all" onclick="navigator.clipboard.writeText('${escaped}');const t=document.createElement('div');t.className='toast success';t.textContent='📋 Đã copy!';document.getElementById('toastContainer').appendChild(t);setTimeout(()=>t.remove(),2000)" title="Click để copy">${strVal}</code></td>`;
+              const safeVal = strVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+              html += `<td><code style="cursor:pointer;word-break:break-all;padding:4px 8px;background:rgba(255,255,255,0.06);border-radius:4px;display:inline-block" data-copy="${safeVal}" onclick="copyCredVal(this)" title="Click để copy">${safeVal}</code></td>`;
             } else {
               html += '<td><span style="color:var(--text-muted)">—</span></td>';
             }
