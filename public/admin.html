@@ -1641,16 +1641,62 @@ Số Lượng Đang Hiện Có 10"
         if (order.delivered_at) html += `<div>📬 ${order.delivered_at.replace('T', ' ').substring(0, 16)}</div>`;
         html += `</div>`;
 
+        // Detect actual keys from credential data
+        const allDataKeys = new Set();
+        const parsedCreds = credentials.map(c => {
+          let data = c.data;
+          // Handle case where data is a string
+          if (typeof data === 'string') {
+            try { data = JSON.parse(data); } catch { data = { value: data }; }
+          }
+          // Handle case where data is an array (multiple creds in one)
+          if (Array.isArray(data)) {
+            data = { value: JSON.stringify(data) };
+          }
+          if (typeof data !== 'object' || data === null) {
+            data = { value: String(data) };
+          }
+          Object.keys(data).forEach(k => allDataKeys.add(k));
+          return { ...c, parsedData: data };
+        });
+
+        // Build columns: merge product fields with actual data keys
+        const columns = [];
+        const fieldMap = {};
+        (credentialFields || []).forEach(f => { fieldMap[f.key] = f; });
+
+        // First add fields that exist in actual data
+        for (const key of allDataKeys) {
+          const field = fieldMap[key];
+          columns.push({
+            key,
+            label: field ? `${field.icon || ''} ${field.label}` : key.charAt(0).toUpperCase() + key.slice(1),
+          });
+        }
+
+        // If no columns detected, show raw
+        if (columns.length === 0) {
+          columns.push({ key: '_raw', label: 'Dữ liệu' });
+        }
+
         // Credentials table
         html += '<table><tr><th>#</th>';
-        credentialFields.forEach(f => { html += `<th>${f.icon || ''} ${f.label}</th>`; });
+        columns.forEach(col => { html += `<th>${col.label}</th>`; });
         html += '</tr>';
 
-        credentials.forEach((c, i) => {
+        parsedCreds.forEach((c, i) => {
           html += `<tr><td>${i + 1}</td>`;
-          credentialFields.forEach(f => {
-            const val = c.data[f.key];
-            html += `<td>${val ? `<code style="cursor:pointer" onclick="navigator.clipboard.writeText('${val.replace(/'/g, "\\'").replace(/"/g, '&quot;')}');document.querySelector('#toastContainer').innerHTML='';const t=document.createElement('div');t.className='toast success';t.textContent='📋 Đã copy: ${f.label}';document.getElementById('toastContainer').appendChild(t);setTimeout(()=>t.remove(),2000)" title="Click để copy">${val}</code>` : '<span style="color:var(--text-muted)">—</span>'}</td>`;
+          columns.forEach(col => {
+            let val = col.key === '_raw' ? JSON.stringify(c.parsedData) : c.parsedData[col.key];
+            if (val === undefined || val === null) val = '';
+            const strVal = String(val);
+            if (strVal) {
+              // Escape for onclick
+              const escaped = strVal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+              html += `<td><code style="cursor:pointer;word-break:break-all" onclick="navigator.clipboard.writeText('${escaped}');const t=document.createElement('div');t.className='toast success';t.textContent='📋 Đã copy!';document.getElementById('toastContainer').appendChild(t);setTimeout(()=>t.remove(),2000)" title="Click để copy">${strVal}</code></td>`;
+            } else {
+              html += '<td><span style="color:var(--text-muted)">—</span></td>';
+            }
           });
           html += '</tr>';
         });
