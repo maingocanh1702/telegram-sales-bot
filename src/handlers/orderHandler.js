@@ -28,6 +28,20 @@ function setupOrderHandler(bot) {
             return;
         }
 
+        if (data.startsWith('order_view_')) {
+            const orderCode = data.replace('order_view_', '');
+            bot.answerCallbackQuery(query.id);
+            showOrderDetail(bot, query.message.chat.id, query.message.message_id, orderCode);
+            return;
+        }
+
+        if (data.startsWith('order_history_page_')) {
+            const page = parseInt(data.replace('order_history_page_', ''));
+            bot.answerCallbackQuery(query.id);
+            showUserOrders(bot, query.message.chat.id, query.message.message_id, query.from.id, page);
+            return;
+        }
+
         if (data === 'menu_orders') {
             bot.answerCallbackQuery(query.id);
             showUserOrders(bot, query.message.chat.id, query.message.message_id, query.from.id);
@@ -168,10 +182,12 @@ function cancelOrder(bot, chatId, messageId, orderCode) {
 }
 
 /**
- * Show user's order history
+ * Show user's order history with clickable detail buttons
  */
-function showUserOrders(bot, chatId, messageId, userId) {
-    const orders = db.getUserOrders(userId, 10);
+const ORDERS_PER_PAGE = 5;
+
+function showUserOrders(bot, chatId, messageId, userId, page = 0) {
+    const allOrders = db.getUserOrders(userId, 50);
 
     const emptyText = '📭 Bạn chưa có đơn hàng nào.\n\nBắt đầu mua sắm ngay!';
     const emptyKeyboard = {
@@ -181,7 +197,7 @@ function showUserOrders(bot, chatId, messageId, userId) {
         ],
     };
 
-    if (orders.length === 0) {
+    if (allOrders.length === 0) {
         if (messageId) {
             bot.editMessageText(emptyText, {
                 chat_id: chatId,
@@ -194,6 +210,10 @@ function showUserOrders(bot, chatId, messageId, userId) {
         return;
     }
 
+    const totalPages = Math.ceil(allOrders.length / ORDERS_PER_PAGE);
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+    const orders = allOrders.slice(currentPage * ORDERS_PER_PAGE, (currentPage + 1) * ORDERS_PER_PAGE);
+
     const statusEmoji = {
         pending: '⏳',
         paid: '✅',
@@ -202,28 +222,153 @@ function showUserOrders(bot, chatId, messageId, userId) {
         expired: '⏰',
     };
 
-    let text = '📦 **ĐƠN HÀNG CỦA BẠN**\n\n';
+    const statusLabel = {
+        pending: 'Chờ TT',
+        paid: 'Đã TT',
+        delivered: 'Đã giao',
+        cancelled: 'Đã hủy',
+        expired: 'Hết hạn',
+    };
 
+    let text = '📦 **ĐƠN HÀNG CỦA BẠN**\n';
+    text += `📄 Trang ${currentPage + 1}/${totalPages} — Tổng ${allOrders.length} đơn\n\n`;
+    text += '👇 Bấm vào đơn hàng để xem chi tiết:\n';
+
+    // Build order buttons — each order is a clickable button
+    const keyboard = [];
     for (const order of orders) {
         const emoji = statusEmoji[order.status] || '📦';
-        text += `${emoji} #${order.order_code}\n`;
-        text += `   ${order.product_name} x${order.quantity} - ${formatPrice(order.total_amount)}\n`;
-        text += `   Trạng thái: ${order.status}\n\n`;
+        const label = statusLabel[order.status] || order.status;
+        keyboard.push([{
+            text: `${emoji} #${order.order_code} | ${order.product_name} x${order.quantity} | ${label}`,
+            callback_data: `order_view_${order.order_code}`,
+        }]);
     }
+
+    // Pagination buttons
+    if (totalPages > 1) {
+        const navRow = [];
+        if (currentPage > 0) {
+            navRow.push({ text: '⬅️ Trước', callback_data: `order_history_page_${currentPage - 1}` });
+        }
+        navRow.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+        if (currentPage < totalPages - 1) {
+            navRow.push({ text: 'Sau ➡️', callback_data: `order_history_page_${currentPage + 1}` });
+        }
+        keyboard.push(navRow);
+    }
+
+    keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
 
     const options = {
         parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
-            ],
-        },
+        reply_markup: { inline_keyboard: keyboard },
     };
 
     if (messageId) {
         bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
     } else {
         bot.sendMessage(chatId, text, options);
+    }
+}
+
+/**
+ * Show detailed view of a single order
+ */
+function showOrderDetail(bot, chatId, messageId, orderCode) {
+    const order = db.getOrderByCode(orderCode);
+
+    if (!order) {
+        bot.editMessageText('❌ Không tìm thấy đơn hàng.', {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📦 Quay lại danh sách', callback_data: 'menu_orders' }],
+                ],
+            },
+        }).catch(() => { });
+        return;
+    }
+
+    const statusEmoji = {
+        pending: '⏳ Chờ thanh toán',
+        paid: '✅ Đã thanh toán',
+        delivered: '📬 Đã giao hàng',
+        cancelled: '❌ Đã hủy',
+        expired: '⏰ Hết hạn',
+    };
+
+    const statusText = statusEmoji[order.status] || order.status;
+
+    let text = `🧾 **CHI TIẾT ĐƠN HÀNG**\n\n`;
+    text += `📌 **Mã đơn:** #${order.order_code}\n`;
+    text += `📊 **Trạng thái:** ${statusText}\n\n`;
+
+    text += `━━━━━━ 📦 Sản phẩm ━━━━━━\n`;
+    text += `• Tên: **${order.product_name}**\n`;
+    text += `• Số lượng: **${order.quantity}**\n`;
+    text += `• Đơn giá: **${formatPrice(order.unit_price)}**\n`;
+    text += `• Tổng tiền: **${formatPrice(order.total_amount)}**\n\n`;
+
+    if (order.customer_email) {
+        text += `📧 **Email KH:** ${order.customer_email}\n\n`;
+    }
+
+    text += `━━━━━━ 🕐 Thời gian ━━━━━━\n`;
+    text += `• Tạo đơn: ${formatDateTime(order.created_at)}\n`;
+
+    if (order.paid_at) {
+        text += `• Thanh toán: ${formatDateTime(order.paid_at)}\n`;
+    }
+    if (order.delivered_at) {
+        text += `• Giao hàng: ${formatDateTime(order.delivered_at)}\n`;
+    }
+    if (order.expires_at && order.status === 'pending') {
+        const expiresAt = new Date(order.expires_at);
+        const now = new Date();
+        const minutesLeft = Math.max(0, Math.ceil((expiresAt - now) / 60000));
+        text += `• ⏳ Hết hạn sau: **${minutesLeft} phút**\n`;
+    }
+    if (order.subscription_expires_at) {
+        text += `• 📅 Hạn sử dụng: **${order.subscription_expires_at}**\n`;
+    }
+
+    // Action buttons based on status
+    const keyboard = [];
+    if (order.status === 'pending') {
+        keyboard.push([{ text: '❌ Hủy đơn hàng', callback_data: `cancel_order_${order.order_code}` }]);
+    }
+    keyboard.push([{ text: '📦 Quay lại danh sách', callback_data: 'menu_orders' }]);
+    keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
+
+    const options = {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard },
+    };
+
+    if (messageId) {
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+    } else {
+        bot.sendMessage(chatId, text, options);
+    }
+}
+
+/**
+ * Format datetime string to Vietnamese locale
+ */
+function formatDateTime(dateStr) {
+    if (!dateStr) return 'N/A';
+    try {
+        const date = new Date(dateStr);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch {
+        return dateStr;
     }
 }
 

@@ -262,6 +262,49 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Get credentials delivered for a specific order
+    app.get('/api/admin/orders/:code/credentials', (req, res) => {
+        try {
+            const order = db.getOrderByCode(req.params.code);
+            if (!order) {
+                return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
+            }
+
+            const d = db.getDb();
+            const stmt = d.prepare('SELECT * FROM credentials WHERE order_id = ?');
+            stmt.bind([order.id]);
+            const credentials = [];
+            while (stmt.step()) credentials.push(stmt.getAsObject());
+            stmt.free();
+
+            // Get product credential fields for label rendering
+            const product = db.getProductById(order.product_id);
+            let credentialFields = [];
+            if (product) {
+                try { credentialFields = JSON.parse(product.credential_fields || '[]'); } catch { }
+            }
+
+            res.json({
+                order: {
+                    order_code: order.order_code,
+                    product_name: order.product_name,
+                    quantity: order.quantity,
+                    status: order.status,
+                    customer_email: order.customer_email,
+                    telegram_username: order.telegram_username,
+                    delivered_at: order.delivered_at,
+                },
+                credentialFields,
+                credentials: credentials.map(c => ({
+                    id: c.id,
+                    data: typeof c.data === 'string' ? JSON.parse(c.data || '{}') : (c.data || {}),
+                })),
+            });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Customers ====================
 
     app.get('/api/admin/customers', (req, res) => {

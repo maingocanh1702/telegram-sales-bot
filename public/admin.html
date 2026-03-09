@@ -907,6 +907,17 @@ Số Lượng Đang Hiện Có 10"
 
   <div class="toast-container" id="toastContainer"></div>
 
+  <!-- Order Credentials Modal -->
+  <div class="modal-overlay" id="orderCredModal">
+    <div class="modal-content" style="max-width:600px">
+      <h3 id="orderCredModalTitle">🔑 Tài khoản đã giao</h3>
+      <div id="orderCredModalBody" style="margin:16px 0">⏳ Đang tải...</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('orderCredModal')">Đóng</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let API_KEY = '';
     const API = '/api/admin';
@@ -1468,7 +1479,7 @@ Số Lượng Đang Hiện Có 10"
           ? `<br><span style="font-size:11px;color:var(--primary)">${o.customer_email}</span>`
           : '';
         html += `<tr>
-          <td><code>${o.order_code}</code></td><td>${o.product_name}</td>
+          <td>${(o.status === 'delivered' || o.status === 'paid') ? `<code style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewOrderCredentials('${o.order_code}')" title="Click để xem tài khoản đã giao">${o.order_code}</code>` : `<code>${o.order_code}</code>`}</td><td>${o.product_name}</td>
           <td><span style="font-size:12px">${typeIcon}</span></td><td>${o.quantity}</td>
           <td class="money">${formatMoney(o.total_amount)}</td>
           <td>@${o.telegram_username || o.telegram_user_id}${emailInfo}</td>
@@ -1492,6 +1503,7 @@ Số Lượng Đang Hiện Có 10"
             html += `<button class="btn btn-sm btn-danger" onclick="cancelOrder('${o.order_code}')">❌</button>`;
           }
           if (o.status === 'delivered') {
+            html += `<button class="btn btn-sm" onclick="viewOrderCredentials('${o.order_code}')" title="Xem tài khoản đã giao" style="background:var(--bg-card);border:1px solid var(--border);margin-right:4px">🔑</button>`;
             html += `<button class="btn btn-sm" onclick="setOrderExpiry('${o.order_code}')" title="Set thời hạn" style="background:var(--bg-card);border:1px solid var(--border)">⏰</button>`;
           }
           html += '</td>';
@@ -1598,6 +1610,57 @@ Số Lượng Đang Hiện Có 10"
         toast(res.message);
         loadOrders();
       } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function viewOrderCredentials(code) {
+      document.getElementById('orderCredModal').classList.add('active');
+      document.getElementById('orderCredModalTitle').textContent = `🔑 Tài khoản — #${code}`;
+      document.getElementById('orderCredModalBody').innerHTML = '<p style="text-align:center;padding:20px">⏳ Đang tải...</p>';
+
+      try {
+        const res = await apiFetch(`/orders/${code}/credentials`);
+        const { order, credentialFields, credentials } = res;
+
+        if (credentials.length === 0) {
+          document.getElementById('orderCredModalBody').innerHTML = `
+            <div class="empty-state" style="padding:24px">
+              <span class="material-symbols-rounded">key_off</span>
+              <p>Chưa có tài khoản nào được giao cho đơn này</p>
+              <p style="font-size:12px;color:var(--text-muted);margin-top:4px">
+                ${order.status === 'paid' ? 'Đơn đã thanh toán nhưng chưa giao tài khoản' : 'Có thể sản phẩm thuộc loại invite/preorder'}
+              </p>
+            </div>`;
+          return;
+        }
+
+        // Header info
+        let html = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-main);border-radius:8px;font-size:13px">`;
+        html += `<div>📦 <strong>${order.product_name}</strong></div>`;
+        html += `<div>👤 @${order.telegram_username || 'N/A'}</div>`;
+        if (order.customer_email) html += `<div>📧 ${order.customer_email}</div>`;
+        if (order.delivered_at) html += `<div>📬 ${order.delivered_at.replace('T', ' ').substring(0, 16)}</div>`;
+        html += `</div>`;
+
+        // Credentials table
+        html += '<table><tr><th>#</th>';
+        credentialFields.forEach(f => { html += `<th>${f.icon || ''} ${f.label}</th>`; });
+        html += '</tr>';
+
+        credentials.forEach((c, i) => {
+          html += `<tr><td>${i + 1}</td>`;
+          credentialFields.forEach(f => {
+            const val = c.data[f.key];
+            html += `<td>${val ? `<code style="cursor:pointer" onclick="navigator.clipboard.writeText('${val.replace(/'/g, "\\'").replace(/"/g, '&quot;')}');document.querySelector('#toastContainer').innerHTML='';const t=document.createElement('div');t.className='toast success';t.textContent='📋 Đã copy: ${f.label}';document.getElementById('toastContainer').appendChild(t);setTimeout(()=>t.remove(),2000)" title="Click để copy">${val}</code>` : '<span style="color:var(--text-muted)">—</span>'}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</table>';
+        html += `<p style="font-size:11px;color:var(--text-muted);margin-top:8px">💡 Click vào giá trị để copy</p>`;
+
+        document.getElementById('orderCredModalBody').innerHTML = html;
+      } catch (e) {
+        document.getElementById('orderCredModalBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
+      }
     }
 
     async function confirmOrder(code) {
