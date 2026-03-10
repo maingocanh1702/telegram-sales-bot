@@ -181,6 +181,13 @@ function addCategory(name, emoji = '📦') {
 
 function getProducts() {
   try {
+    // Debug: check raw product count
+    const countResult = db.exec('SELECT COUNT(*) as cnt FROM products');
+    const totalCount = countResult.length > 0 ? countResult[0].values[0][0] : 0;
+    const activeResult = db.exec('SELECT COUNT(*) as cnt FROM products WHERE CAST(is_active AS INTEGER) = 1');
+    const activeCount = activeResult.length > 0 ? activeResult[0].values[0][0] : 0;
+    console.log(`🔍 getProducts() debug: total=${totalCount}, active=${activeCount}`);
+
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
@@ -206,6 +213,7 @@ function getProducts() {
         results.push(row);
     }
     stmt.free();
+    console.log(`🔍 getProducts() returned ${results.length} products`);
     return results;
   } catch (err) {
     console.error('❌ getProducts() SQL error:', err.message);
