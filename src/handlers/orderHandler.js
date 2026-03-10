@@ -94,12 +94,7 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
             customerEmail: customerEmail || null,
         });
 
-        // Decrement invite slots if invite product
-        if (product.product_type === 'invite') {
-            const d = db.getDb();
-            d.run('UPDATE products SET invite_slots = MAX(0, invite_slots - ?) WHERE id = ?', [quantity, product.id]);
-            db.saveDatabase();
-        }
+        // Note: invite/preorder stock is now computed dynamically from order count
 
         const qrUrl = generateQRUrl(totalAmount, orderCode);
         const minutesLeft = Math.ceil((new Date(expiresAt) - Date.now()) / 60000);
@@ -162,13 +157,7 @@ function cancelOrder(bot, chatId, messageId, orderCode) {
 
     db.updateOrderStatus(orderCode, 'cancelled');
 
-    // Restore invite slots if this was an invite product
-    const product = db.getProductById(order.product_id);
-    if (product && product.product_type === 'invite') {
-        const d = db.getDb();
-        d.run('UPDATE products SET invite_slots = invite_slots + ? WHERE id = ?', [order.quantity, order.product_id]);
-        db.saveDatabase();
-    }
+    // Note: invite/preorder stock is computed dynamically, no need to restore
     bot.sendMessage(chatId,
         `✅ Đã hủy đơn hàng #${orderCode} thành công.`,
         {
