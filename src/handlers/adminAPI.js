@@ -75,7 +75,8 @@ function setupAdminAPI(app, bot) {
                 return res.status(400).json({ error: true, message: 'Name and price required', code: 'VALIDATION_ERROR' });
             }
             const subDays = subscriptionDays ? parseInt(subscriptionDays) : null;
-            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays);
+            const preorderStockVal = parseInt(req.body.preorderStock) || 0;
+            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays, preorderStockVal);
             // Save customer_fields for invite/preorder
             if (customerFields && (productType === 'invite' || productType === 'preorder')) {
                 db.updateProduct(id, { customer_fields: JSON.stringify(customerFields) });
@@ -101,6 +102,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.deliveryHours !== undefined) updates.delivery_hours = parseInt(req.body.deliveryHours);
             if (req.body.subscriptionDays !== undefined) updates.subscription_days = req.body.subscriptionDays ? parseInt(req.body.subscriptionDays) : null;
             if (req.body.customerFields !== undefined) updates.customer_fields = JSON.stringify(req.body.customerFields);
+            if (req.body.preorderStock !== undefined) updates.preorder_stock = parseInt(req.body.preorderStock) || 0;
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {

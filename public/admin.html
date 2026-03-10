@@ -847,6 +847,11 @@ Số Lượng Đang Hiện Có 10"
         <input type="number" id="pDeliveryHours" placeholder="24" min="1" value="24">
         <p class="hint">Hẹn giao trong bao nhiêu giờ sau thanh toán</p>
       </div>
+      <div id="preorderStockGroup" class="form-group" style="display:none">
+        <label>Số lượng khả dụng</label>
+        <input type="number" id="pPreorderStock" placeholder="10" min="0">
+        <p class="hint">Tổng số lượng SP có thể bán (VD: 10). Khi hết → hiện "Hết hàng"</p>
+      </div>
       <div id="customerFieldsGroup" class="form-group" style="display:none">
         <label>Thông tin cần thu thập từ khách</label>
         <div id="customerFieldBuilder"></div>
@@ -1021,7 +1026,7 @@ Số Lượng Đang Hiện Có 10"
           } else if (pType === 'invite') {
             typeInfo = `📧 Invite · ${p.invite_slots || 0} slots${subInfo}`;
           } else if (pType === 'preorder') {
-            typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h${subInfo}`;
+            typeInfo = `📦 Preorder · ${p.delivery_hours || 24}h · ${p.preorder_stock || 0} stock${subInfo}`;
           }
           html += `<tr data-product-id="${p.id}" draggable="false">
             <td style="width:40px;padding:8px">
@@ -1197,6 +1202,7 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('pType').value = pType;
       document.getElementById('pInviteSlots').value = product ? (product.invite_slots || 0) : '';
       document.getElementById('pDeliveryHours').value = product ? (product.delivery_hours || 24) : 24;
+      document.getElementById('pPreorderStock').value = product ? (product.preorder_stock || 0) : '';
       document.getElementById('pSubscriptionDays').value = product ? (product.subscription_days || '') : '';
       toggleProductTypeFields();
 
@@ -1233,6 +1239,7 @@ Số Lượng Đang Hiện Có 10"
       const type = document.getElementById('pType').value;
       document.getElementById('inviteSlotsGroup').style.display = type === 'invite' ? '' : 'none';
       document.getElementById('deliveryHoursGroup').style.display = type === 'preorder' ? '' : 'none';
+      document.getElementById('preorderStockGroup').style.display = type === 'preorder' ? '' : 'none';
       document.getElementById('credentialFieldsGroup').style.display = type === 'credential' ? '' : 'none';
       document.getElementById('customerFieldsGroup').style.display = (type === 'invite' || type === 'preorder') ? '' : 'none';
     }
@@ -1279,6 +1286,7 @@ Số Lượng Đang Hiện Có 10"
         customerFields: (productType === 'invite' || productType === 'preorder') ? getCustomerFieldsFromBuilder() : undefined,
         inviteSlots: productType === 'invite' ? (document.getElementById('pInviteSlots').value || 0) : undefined,
         deliveryHours: productType === 'preorder' ? (document.getElementById('pDeliveryHours').value || 24) : undefined,
+        preorderStock: productType === 'preorder' ? (document.getElementById('pPreorderStock').value || 0) : undefined,
         subscriptionDays: document.getElementById('pSubscriptionDays').value || null,
       };
       try {
