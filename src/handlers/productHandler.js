@@ -1,5 +1,8 @@
 const db = require('../database');
+const config = require('../config');
 const { formatPrice } = require('./menuHandler');
+
+const ITEMS_PER_PAGE = 8;
 
 /**
  * Handle product listing and detail views
@@ -13,26 +16,43 @@ function setupProductHandler(bot) {
     // Callback handlers
     bot.on('callback_query', (query) => {
         const data = query.data;
+        if (!data) return;
 
-        if (data === 'menu_products') {
+        if (data === 'menu_products' || data === 'menu_products:refresh') {
             bot.answerCallbackQuery(query.id);
-            showProductList(bot, query.message.chat.id, query.message.message_id);
+            showProductList(bot, query.message.chat.id, query.message.message_id, 1);
+            return;
+        }
+
+        if (data.startsWith('menu_products:page:')) {
+            const page = Number.parseInt(data.replace('menu_products:page:', ''), 10);
+            bot.answerCallbackQuery(query.id);
+            showProductList(bot, query.message.chat.id, query.message.message_id, Number.isFinite(page) ? page : 1);
+            return;
+        }
+
+        const pagedProductMatch = data.match(/^product_(\d+)_p(\d+)$/);
+        if (pagedProductMatch) {
+            const productId = Number.parseInt(pagedProductMatch[1], 10);
+            const page = Number.parseInt(pagedProductMatch[2], 10);
+            bot.answerCallbackQuery(query.id);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, page);
             return;
         }
 
         if (data.startsWith('product_')) {
-            const productId = parseInt(data.replace('product_', ''));
+            const productId = Number.parseInt(data.replace('product_', ''), 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, 1);
             return;
         }
     });
 }
 
 /**
- * Show list of all available products
+ * Show list of all available products (paginated)
  */
-function showProductList(bot, chatId, messageId = null) {
+function showProductList(bot, chatId, messageId = null, page = 1) {
     const products = db.getProducts();
 
     if (products.length === 0) {
@@ -53,17 +73,39 @@ function showProductList(bot, chatId, messageId = null) {
         return;
     }
 
-    let text = 'Chọn sản phẩm:';
+    const totalPages = Math.max(1, Math.ceil(products.length / ITEMS_PER_PAGE));
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    const start = (safePage - 1) * ITEMS_PER_PAGE;
+    const pageItems = products.slice(start, start + ITEMS_PER_PAGE);
+
+    let text = `🛍 Danh sách sản phẩm (trang ${safePage}/${totalPages})\n\n`;
 
     const keyboard = [];
 
-    for (const p of products) {
+    for (const p of pageItems) {
         const icon = p.stock > 0 ? '✅' : '❌';
         keyboard.push([{
             text: `${icon} ${p.name} - ${formatPrice(p.price)} (${p.stock})`,
-            callback_data: `product_${p.id}`,
+            callback_data: `product_${p.id}_p${safePage}`,
         }]);
     }
+
+    if (totalPages > 1) {
+        const navRow = [];
+        if (safePage > 1) {
+            navRow.push({ text: '⬅️ Trước', callback_data: `menu_products:page:${safePage - 1}` });
+        }
+        navRow.push({ text: `📄 ${safePage}/${totalPages}`, callback_data: 'noop' });
+        if (safePage < totalPages) {
+            navRow.push({ text: 'Sau ➡️', callback_data: `menu_products:page:${safePage + 1}` });
+        }
+        keyboard.push(navRow);
+    }
+
+    keyboard.push([
+        { text: '🔄 Làm mới', callback_data: 'menu_products:refresh' },
+        { text: '💬 Hỗ trợ', url: config.supportUrl },
+    ]);
 
     keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
 
@@ -82,7 +124,7 @@ function showProductList(bot, chatId, messageId = null) {
 /**
  * Show detailed view of a single product
  */
-function showProductDetail(bot, chatId, messageId, productId) {
+function showProductDetail(bot, chatId, messageId, productId, page = 1) {
     const product = db.getProductById(productId);
 
     if (!product) {
@@ -91,7 +133,7 @@ function showProductDetail(bot, chatId, messageId, productId) {
             message_id: messageId,
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '↩️ Quay lại', callback_data: 'menu_products' }],
+                    [{ text: '↩️ Quay lại', callback_data: `menu_products:page:${page}` }],
                 ],
             },
         }).catch(() => { });
@@ -121,7 +163,8 @@ function showProductDetail(bot, chatId, messageId, productId) {
         keyboard.push([{ text: '❌ Hết hàng', callback_data: 'noop' }]);
     }
 
-    keyboard.push([{ text: '↩️ Quay lại', callback_data: 'menu_products' }]);
+    keyboard.push([{ text: '↩️ Quay lại', callback_data: `menu_products:page:${page}` }]);
+    keyboard.push([{ text: '💬 Hỗ trợ', url: config.supportUrl }]);
 
     bot.editMessageText(text, {
         chat_id: chatId,
