@@ -139,6 +139,7 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN expiry_reminded INTEGER DEFAULT 0`,
         `ALTER TABLE products ADD COLUMN customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]'`,
         `ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN preorder_stock INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -181,7 +182,8 @@ function addCategory(name, emoji = '📦') {
 function getProducts() {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as preorder_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE CAST(p.is_active AS INTEGER) = 1
@@ -194,7 +196,8 @@ function getProducts() {
         if (row.product_type === 'invite') {
             row.stock = row.invite_slots || 0;
         } else if (row.product_type === 'preorder') {
-            row.stock = 999; // preorder always available
+            const total = row.preorder_stock || 0;
+            row.stock = Math.max(0, total - (row.preorder_sold || 0));
         } else {
             row.stock = row.credential_stock;
         }
@@ -207,7 +210,8 @@ function getProducts() {
 function getProductById(id) {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
-           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as preorder_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.id = ?
@@ -219,7 +223,8 @@ function getProductById(id) {
         if (result.product_type === 'invite') {
             result.stock = result.invite_slots || 0;
         } else if (result.product_type === 'preorder') {
-            result.stock = 999;
+            const total = result.preorder_stock || 0;
+            result.stock = Math.max(0, total - (result.preorder_sold || 0));
         } else {
             result.stock = result.credential_stock;
         }
@@ -228,14 +233,14 @@ function getProductById(id) {
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null, preorderStock = 0) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays]
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, preorder_stock, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays, preorderStock]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
@@ -426,19 +431,20 @@ function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
            p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days, p.customer_fields,
+           p.preorder_stock,
            CASE p.product_type
              WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
-             WHEN 'preorder' THEN 999
+             WHEN 'preorder' THEN MAX(0, COALESCE(p.preorder_stock, 0) - (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')))
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0)
            END as available,
            CASE p.product_type
              WHEN 'invite' THEN 0
-             WHEN 'preorder' THEN 0
+             WHEN 'preorder' THEN (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered'))
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1)
            END as sold,
            CASE p.product_type
              WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
-             WHEN 'preorder' THEN 999
+             WHEN 'preorder' THEN COALESCE(p.preorder_stock, 0)
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id)
            END as total
     FROM products p
