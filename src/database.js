@@ -180,6 +180,7 @@ function addCategory(name, emoji = '📦') {
 // ==================== Products ====================
 
 function getProducts() {
+  try {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
@@ -206,6 +207,10 @@ function getProducts() {
     }
     stmt.free();
     return results;
+  } catch (err) {
+    console.error('❌ getProducts() SQL error:', err.message);
+    return [];
+  }
 }
 
 function getProductById(id) {
