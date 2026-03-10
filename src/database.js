@@ -183,7 +183,7 @@ function getProducts() {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
-           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as preorder_sold
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE CAST(p.is_active AS INTEGER) = 1
@@ -194,10 +194,11 @@ function getProducts() {
         const row = stmt.getAsObject();
         // Stock logic by product type
         if (row.product_type === 'invite') {
-            row.stock = row.invite_slots || 0;
+            const total = row.invite_slots || 0;
+            row.stock = Math.max(0, total - (row.order_sold || 0));
         } else if (row.product_type === 'preorder') {
             const total = row.preorder_stock || 0;
-            row.stock = Math.max(0, total - (row.preorder_sold || 0));
+            row.stock = Math.max(0, total - (row.order_sold || 0));
         } else {
             row.stock = row.credential_stock;
         }
@@ -211,7 +212,7 @@ function getProductById(id) {
     const stmt = db.prepare(`
     SELECT p.*, c.name as category_name, c.emoji as category_emoji,
            (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
-           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as preorder_sold
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.id = ?
@@ -221,10 +222,11 @@ function getProductById(id) {
     if (stmt.step()) {
         result = stmt.getAsObject();
         if (result.product_type === 'invite') {
-            result.stock = result.invite_slots || 0;
+            const total = result.invite_slots || 0;
+            result.stock = Math.max(0, total - (result.order_sold || 0));
         } else if (result.product_type === 'preorder') {
             const total = result.preorder_stock || 0;
-            result.stock = Math.max(0, total - (result.preorder_sold || 0));
+            result.stock = Math.max(0, total - (result.order_sold || 0));
         } else {
             result.stock = result.credential_stock;
         }
@@ -433,12 +435,12 @@ function getAllProductsStock() {
            p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days, p.customer_fields,
            p.preorder_stock,
            CASE p.product_type
-             WHEN 'invite' THEN COALESCE(p.invite_slots, 0)
+             WHEN 'invite' THEN MAX(0, COALESCE(p.invite_slots, 0) - (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')))
              WHEN 'preorder' THEN MAX(0, COALESCE(p.preorder_stock, 0) - (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')))
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0)
            END as available,
            CASE p.product_type
-             WHEN 'invite' THEN 0
+             WHEN 'invite' THEN (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered'))
              WHEN 'preorder' THEN (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered'))
              ELSE (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 1)
            END as sold,
