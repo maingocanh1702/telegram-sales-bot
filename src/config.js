@@ -44,9 +44,9 @@ const config = {
   // Order settings
   orderExpiryMinutes: parseInt(process.env.ORDER_EXPIRY_MINUTES) || 5,
 
-  // Support
-  supportUsername: '@maingocanh',
-  supportUrl: 'https://t.me/maingocanh',
+  // Support (configurable per instance)
+  supportUsername: process.env.SUPPORT_USERNAME || '@maingocanh',
+  supportUrl: `https://t.me/${(process.env.SUPPORT_USERNAME || '@maingocanh').replace('@', '')}`,
 };
 
 // Startup validation
