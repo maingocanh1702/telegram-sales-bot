@@ -1,6 +1,7 @@
 const db = require('../database');
 const config = require('../config');
 const { formatPrice } = require('./menuHandler');
+const { CALLBACKS } = require('./callbacks');
 
 /**
  * Deliver credentials or notify admin for invite-type products
@@ -42,7 +43,7 @@ async function deliverPreorder(bot, order, product) {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '✅ Đã giao', callback_data: `preorder_done_${order.order_code}` }],
+                    [{ text: '✅ Đã giao', callback_data: `${CALLBACKS.PREORDER_DONE_PREFIX}${order.order_code}` }],
                 ],
             },
         });
@@ -58,7 +59,7 @@ async function deliverPreorder(bot, order, product) {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                        [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                     ],
                 },
             }
@@ -92,7 +93,7 @@ async function deliverInvite(bot, order, product) {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '✅ Đã invite', callback_data: `invite_done_${order.order_code}` }],
+                    [{ text: '✅ Đã invite', callback_data: `${CALLBACKS.INVITE_DONE_PREFIX}${order.order_code}` }],
                 ],
             },
         });
@@ -106,7 +107,7 @@ async function deliverInvite(bot, order, product) {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                        [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                     ],
                 },
             }
@@ -174,8 +175,8 @@ async function deliverCredential(bot, order, product) {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '🛍 Mua thêm', callback_data: 'menu_products' }],
-                    [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                    [{ text: '🛍 Mua thêm', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                    [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                 ],
             },
         });
@@ -200,9 +201,9 @@ async function deliverCredential(bot, order, product) {
  */
 function setupInviteConfirmHandler(bot) {
     bot.on('callback_query', (query) => {
-        if (!query.data.startsWith('invite_done_')) return;
+        if (!query.data.startsWith(CALLBACKS.INVITE_DONE_PREFIX)) return;
 
-        const orderCode = query.data.replace('invite_done_', '');
+        const orderCode = query.data.replace(CALLBACKS.INVITE_DONE_PREFIX, '');
         const order = db.getOrderByCode(orderCode);
 
         if (!order) {
@@ -232,7 +233,11 @@ function setupInviteConfirmHandler(bot) {
                 message_id: query.message.message_id,
                 parse_mode: 'Markdown',
             }
-        ).catch(() => { });
+        ).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Delivery] editMessage failed:', err.message);
+            }
+        });
 
         // Notify customer — message depends on customer_fields config
         const custFields = product ? JSON.parse(product.customer_fields || '[{"key":"email"}]') : [{ key: 'email' }];
@@ -260,8 +265,8 @@ function setupInviteConfirmHandler(bot) {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '🛍 Mua thêm', callback_data: 'menu_products' }],
-                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                        [{ text: '🛍 Mua thêm', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                        [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                     ],
                 },
             }
@@ -272,9 +277,9 @@ function setupInviteConfirmHandler(bot) {
 
     // Handle preorder fulfillment confirmation
     bot.on('callback_query', (query) => {
-        if (!query.data.startsWith('preorder_done_')) return;
+        if (!query.data.startsWith(CALLBACKS.PREORDER_DONE_PREFIX)) return;
 
-        const orderCode = query.data.replace('preorder_done_', '');
+        const orderCode = query.data.replace(CALLBACKS.PREORDER_DONE_PREFIX, '');
         const order = db.getOrderByCode(orderCode);
 
         if (!order) {
@@ -302,7 +307,11 @@ function setupInviteConfirmHandler(bot) {
                 message_id: query.message.message_id,
                 parse_mode: 'Markdown',
             }
-        ).catch(() => { });
+        ).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Delivery] editMessage failed:', err.message);
+            }
+        });
 
         bot.sendMessage(order.telegram_user_id,
             `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
@@ -314,8 +323,8 @@ function setupInviteConfirmHandler(bot) {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '🛍 Mua thêm', callback_data: 'menu_products' }],
-                        [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                        [{ text: '🛍 Mua thêm', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                        [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                     ],
                 },
             }
