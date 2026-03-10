@@ -72,7 +72,11 @@ function showProductList(bot, chatId, messageId = null, page = 1) {
         };
 
         if (messageId) {
-            bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+            bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch((err) => {
+                if (!err.message?.includes('message is not modified')) {
+                    console.warn('[ProductList] editMessage failed:', err.message);
+                }
+            });
         } else {
             bot.sendMessage(chatId, text, options);
         }
@@ -121,7 +125,11 @@ function showProductList(bot, chatId, messageId = null, page = 1) {
     };
 
     if (messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[ProductList] editMessage failed:', err.message);
+            }
+        });
     } else {
         bot.sendMessage(chatId, text, options);
     }
@@ -142,7 +150,11 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
                     [{ text: '↩️ Quay lại', callback_data: `${CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX}${page}` }],
                 ],
             },
-        }).catch(() => { });
+        }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[ProductDetail] editMessage failed:', err.message);
+            }
+        });
         return;
     }
 
@@ -177,7 +189,11 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
         message_id: messageId,
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: keyboard },
-    }).catch(() => { });
+    }).catch((err) => {
+        if (!err.message?.includes('message is not modified')) {
+            console.warn('[ProductDetail] editMessage failed:', err.message);
+        }
+    });
 }
 
 module.exports = { setupProductHandler, showProductList };

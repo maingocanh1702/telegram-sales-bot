@@ -83,7 +83,7 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
     const inlineKeyboard = [
         [
             { text: '🛍 Sản phẩm', callback_data: CALLBACKS.MENU_PRODUCTS },
-            { text: '📦 Đơn hàng', callback_data: 'menu_orders' },
+            { text: '📦 Đơn hàng', callback_data: CALLBACKS.MENU_ORDERS },
         ],
         [
             { text: '💬 Hỗ trợ', url: config.supportUrl },
@@ -96,7 +96,11 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
             message_id: editMessageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: inlineKeyboard },
-        }).catch(() => { });
+        }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Menu] editMessage failed:', err.message);
+            }
+        });
     } else {
         // Send with Reply Keyboard to set it persistent
         bot.sendMessage(chatId, text, {

@@ -1,5 +1,6 @@
 const db = require('../database');
 const config = require('../config');
+const { CALLBACKS } = require('../handlers/callbacks');
 
 let expiryInterval = null;
 
@@ -45,8 +46,8 @@ function checkExpiredOrders(bot) {
                 {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '🛍 Mua hàng', callback_data: 'menu_products' }],
-                            [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                            [{ text: '🛍 Mua hàng', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                            [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                         ],
                     },
                 }

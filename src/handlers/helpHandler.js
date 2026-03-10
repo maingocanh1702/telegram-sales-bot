@@ -1,4 +1,5 @@
 const config = require('../config');
+const { CALLBACKS } = require('./callbacks');
 
 /**
  * Handle /help and /huongdan commands
@@ -35,8 +36,8 @@ function showHelp(bot, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '💬 Chat với Admin', url: config.supportUrl }],
-                [{ text: '📖 Hướng dẫn sử dụng', callback_data: 'show_guide' }],
-                [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                [{ text: '📖 Hướng dẫn sử dụng', callback_data: CALLBACKS.SHOW_GUIDE }],
+                [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
             ],
         },
     });
@@ -77,13 +78,17 @@ function showGuide(bot, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '💬 Liên hệ Admin', url: config.supportUrl }],
-                [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
             ],
         },
     };
 
     if (messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Help] editMessage failed:', err.message);
+            }
+        });
     } else {
         bot.sendMessage(chatId, text, options);
     }
@@ -94,7 +99,7 @@ function showGuide(bot, chatId, messageId = null) {
  */
 function setupGuideCallback(bot) {
     bot.on('callback_query', (query) => {
-        if (query.data === 'show_guide') {
+        if (query.data === CALLBACKS.SHOW_GUIDE) {
             bot.answerCallbackQuery(query.id);
             showGuide(bot, query.message.chat.id, query.message.message_id);
         }

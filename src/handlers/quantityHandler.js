@@ -1,5 +1,6 @@
 const db = require('../database');
 const { formatPrice } = require('./menuHandler');
+const { CALLBACKS } = require('./callbacks');
 
 // Track users waiting for custom quantity input
 const waitingForQuantity = new Map();
@@ -12,15 +13,15 @@ function setupQuantityHandler(bot) {
         const data = query.data;
 
         // Show quantity selection
-        if (data.startsWith('buy_')) {
-            const productId = parseInt(data.replace('buy_', ''));
+        if (data.startsWith(CALLBACKS.BUY_PREFIX)) {
+            const productId = parseInt(data.replace(CALLBACKS.BUY_PREFIX, ''));
             bot.answerCallbackQuery(query.id);
             showQuantitySelection(bot, query.message.chat.id, query.message.message_id, productId);
             return;
         }
 
         // Quick quantity selection
-        if (data.startsWith('qty_') && !data.startsWith('qty_custom_')) {
+        if (data.startsWith(CALLBACKS.QTY_PREFIX) && !data.startsWith(CALLBACKS.QTY_CUSTOM_PREFIX)) {
             const parts = data.split('_');
             const productId = parseInt(parts[1]);
             const quantity = parseInt(parts[2]);
@@ -46,8 +47,8 @@ function setupQuantityHandler(bot) {
         }
 
         // Custom quantity prompt
-        if (data.startsWith('qty_custom_')) {
-            const productId = parseInt(data.replace('qty_custom_', ''));
+        if (data.startsWith(CALLBACKS.QTY_CUSTOM_PREFIX)) {
+            const productId = parseInt(data.replace(CALLBACKS.QTY_CUSTOM_PREFIX, ''));
             bot.answerCallbackQuery(query.id);
             promptCustomQuantity(bot, query.message.chat.id, query.message.message_id, productId, query.from.id);
             return;
@@ -107,8 +108,8 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
             { text: '5', callback_data: `qty_${productId}_5` },
             { text: '10', callback_data: `qty_${productId}_10` },
         ],
-        [{ text: '✏️ Tùy chỉnh', callback_data: `qty_custom_${productId}` }],
-        [{ text: '↩️ Quay lại', callback_data: `product_${productId}` }],
+        [{ text: '✏️ Tùy chỉnh', callback_data: `${CALLBACKS.QTY_CUSTOM_PREFIX}${productId}` }],
+        [{ text: '↩️ Quay lại', callback_data: `${CALLBACKS.PRODUCT_PREFIX}${productId}` }],
     ];
 
     // Filter out quantities larger than stock
@@ -132,7 +133,11 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
         message_id: messageId,
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: keyboard },
-    }).catch(() => { });
+    }).catch((err) => {
+        if (!err.message?.includes('message is not modified')) {
+            console.warn('[Quantity] editMessage failed:', err.message);
+        }
+    });
 }
 
 /**

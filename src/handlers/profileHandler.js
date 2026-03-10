@@ -1,5 +1,6 @@
 const db = require('../database');
 const { formatPrice } = require('./menuHandler');
+const { CALLBACKS } = require('./callbacks');
 
 /**
  * Handle /profile command — show user account info
@@ -36,8 +37,8 @@ function showProfile(bot, chatId, user) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                [{ text: '📦 Xem đơn hàng', callback_data: 'menu_orders' }],
-                [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                [{ text: '📦 Xem đơn hàng', callback_data: CALLBACKS.MENU_ORDERS }],
+                [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
             ],
         },
     });

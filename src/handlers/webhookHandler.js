@@ -89,7 +89,9 @@ function setupWebhookHandler(app, bot) {
                 `SP: ${order.product_name} x${order.quantity}\n` +
                 `Số tiền: ${amount.toLocaleString('vi-VN')} đ\n` +
                 `Khách: @${order.telegram_username || order.telegram_user_id}`
-            ).catch(() => { });
+            ).catch((err) => {
+                console.warn('[Webhook] Failed to notify admin:', err.message);
+            });
 
             res.json({ success: true });
         } catch (err) {

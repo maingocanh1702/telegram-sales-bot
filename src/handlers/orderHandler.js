@@ -2,6 +2,7 @@ const db = require('../database');
 const config = require('../config');
 const { generateQRUrl } = require('../utils/vietqr');
 const { formatPrice } = require('./menuHandler');
+const { CALLBACKS } = require('./callbacks');
 
 /**
  * Handle order creation, cancellation, and history
@@ -21,34 +22,34 @@ function setupOrderHandler(bot) {
     bot.on('callback_query', (query) => {
         const data = query.data;
 
-        if (data.startsWith('cancel_order_')) {
-            const orderCode = data.replace('cancel_order_', '');
+        if (data.startsWith(CALLBACKS.CANCEL_ORDER_PREFIX)) {
+            const orderCode = data.replace(CALLBACKS.CANCEL_ORDER_PREFIX, '');
             bot.answerCallbackQuery(query.id);
             cancelOrder(bot, query.message.chat.id, query.message.message_id, orderCode);
             return;
         }
 
-        if (data.startsWith('order_view_')) {
-            const orderCode = data.replace('order_view_', '');
+        if (data.startsWith(CALLBACKS.ORDER_VIEW_PREFIX)) {
+            const orderCode = data.replace(CALLBACKS.ORDER_VIEW_PREFIX, '');
             bot.answerCallbackQuery(query.id);
             showOrderDetail(bot, query.message.chat.id, query.message.message_id, orderCode);
             return;
         }
 
-        if (data.startsWith('order_history_page_')) {
-            const page = parseInt(data.replace('order_history_page_', ''));
+        if (data.startsWith(CALLBACKS.ORDER_HISTORY_PAGE_PREFIX)) {
+            const page = parseInt(data.replace(CALLBACKS.ORDER_HISTORY_PAGE_PREFIX, ''));
             bot.answerCallbackQuery(query.id);
             showUserOrders(bot, query.message.chat.id, query.message.message_id, query.from.id, page);
             return;
         }
 
-        if (data === 'menu_orders') {
+        if (data === CALLBACKS.MENU_ORDERS) {
             bot.answerCallbackQuery(query.id);
             showUserOrders(bot, query.message.chat.id, query.message.message_id, query.from.id);
             return;
         }
 
-        if (data === 'noop') {
+        if (data === CALLBACKS.NOOP) {
             bot.answerCallbackQuery(query.id, { text: 'Sản phẩm đã hết hàng!' });
             return;
         }
@@ -120,8 +121,8 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
         text += `👇 Quét mã QR bên dưới để thanh toán:`;
 
         const keyboard = [
-            [{ text: '❌ Hủy đơn', callback_data: `cancel_order_${orderCode}` }],
-            [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+            [{ text: '❌ Hủy đơn', callback_data: `${CALLBACKS.CANCEL_ORDER_PREFIX}${orderCode}` }],
+            [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
         ];
 
         try {
@@ -173,8 +174,8 @@ function cancelOrder(bot, chatId, messageId, orderCode) {
         {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '🛍 Mua hàng', callback_data: 'menu_products' }],
-                    [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                    [{ text: '🛍 Mua hàng', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                    [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                 ],
             },
         }
@@ -192,8 +193,8 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
     const emptyText = '📭 Bạn chưa có đơn hàng nào.\n\nBắt đầu mua sắm ngay!';
     const emptyKeyboard = {
         inline_keyboard: [
-            [{ text: '🛍 Xem sản phẩm', callback_data: 'menu_products' }],
-            [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+            [{ text: '🛍 Xem sản phẩm', callback_data: CALLBACKS.MENU_PRODUCTS }],
+            [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
         ],
     };
 
@@ -203,7 +204,11 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
                 chat_id: chatId,
                 message_id: messageId,
                 reply_markup: emptyKeyboard,
-            }).catch(() => { });
+            }).catch((err) => {
+                if (!err.message?.includes('message is not modified')) {
+                    console.warn('[Orders] editMessage failed:', err.message);
+                }
+            });
         } else {
             bot.sendMessage(chatId, emptyText, { reply_markup: emptyKeyboard });
         }
@@ -241,7 +246,7 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
         const label = statusLabel[order.status] || order.status;
         keyboard.push([{
             text: `${emoji} #${order.order_code} | ${order.product_name} x${order.quantity} | ${label}`,
-            callback_data: `order_view_${order.order_code}`,
+            callback_data: `${CALLBACKS.ORDER_VIEW_PREFIX}${order.order_code}`,
         }]);
     }
 
@@ -249,16 +254,16 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
     if (totalPages > 1) {
         const navRow = [];
         if (currentPage > 0) {
-            navRow.push({ text: '⬅️ Trước', callback_data: `order_history_page_${currentPage - 1}` });
+            navRow.push({ text: '⬅️ Trước', callback_data: `${CALLBACKS.ORDER_HISTORY_PAGE_PREFIX}${currentPage - 1}` });
         }
-        navRow.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+        navRow.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: CALLBACKS.NOOP });
         if (currentPage < totalPages - 1) {
-            navRow.push({ text: 'Sau ➡️', callback_data: `order_history_page_${currentPage + 1}` });
+            navRow.push({ text: 'Sau ➡️', callback_data: `${CALLBACKS.ORDER_HISTORY_PAGE_PREFIX}${currentPage + 1}` });
         }
         keyboard.push(navRow);
     }
 
-    keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
+    keyboard.push([{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }]);
 
     const options = {
         parse_mode: 'Markdown',
@@ -266,7 +271,11 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
     };
 
     if (messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Orders] editMessage failed:', err.message);
+            }
+        });
     } else {
         bot.sendMessage(chatId, text, options);
     }
@@ -284,10 +293,14 @@ function showOrderDetail(bot, chatId, messageId, orderCode) {
             message_id: messageId,
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '📦 Quay lại danh sách', callback_data: 'menu_orders' }],
+                    [{ text: '📦 Quay lại danh sách', callback_data: CALLBACKS.MENU_ORDERS }],
                 ],
             },
-        }).catch(() => { });
+        }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[OrderDetail] editMessage failed:', err.message);
+            }
+        });
         return;
     }
 
@@ -337,10 +350,10 @@ function showOrderDetail(bot, chatId, messageId, orderCode) {
     // Action buttons based on status
     const keyboard = [];
     if (order.status === 'pending') {
-        keyboard.push([{ text: '❌ Hủy đơn hàng', callback_data: `cancel_order_${order.order_code}` }]);
+        keyboard.push([{ text: '❌ Hủy đơn hàng', callback_data: `${CALLBACKS.CANCEL_ORDER_PREFIX}${order.order_code}` }]);
     }
-    keyboard.push([{ text: '📦 Quay lại danh sách', callback_data: 'menu_orders' }]);
-    keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
+    keyboard.push([{ text: '📦 Quay lại danh sách', callback_data: CALLBACKS.MENU_ORDERS }]);
+    keyboard.push([{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }]);
 
     const options = {
         parse_mode: 'Markdown',
@@ -348,7 +361,11 @@ function showOrderDetail(bot, chatId, messageId, orderCode) {
     };
 
     if (messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(() => { });
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch((err) => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[OrderDetail] editMessage failed:', err.message);
+            }
+        });
     } else {
         bot.sendMessage(chatId, text, options);
     }
