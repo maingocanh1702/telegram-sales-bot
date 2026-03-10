@@ -1,5 +1,6 @@
 const config = require('../config');
 const db = require('../database');
+const { CALLBACKS } = require('./callbacks');
 
 /**
  * Format price to Vietnamese format: 15.000 đ
@@ -62,7 +63,7 @@ function setupMenuHandler(bot) {
 
     // Callback: return to main menu
     bot.on('callback_query', (query) => {
-        if (query.data === 'menu_main') {
+        if (query.data === CALLBACKS.MENU_MAIN) {
             bot.answerCallbackQuery(query.id);
             sendMainMenu(bot, query.message.chat.id, query.message.message_id);
         }
@@ -81,7 +82,7 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
 
     const inlineKeyboard = [
         [
-            { text: '🛍 Sản phẩm', callback_data: 'menu_products' },
+            { text: '🛍 Sản phẩm', callback_data: CALLBACKS.MENU_PRODUCTS },
             { text: '📦 Đơn hàng', callback_data: 'menu_orders' },
         ],
         [

@@ -1,6 +1,7 @@
 const db = require('../database');
 const config = require('../config');
 const { formatPrice } = require('./menuHandler');
+const { CALLBACKS } = require('./callbacks');
 
 const ITEMS_PER_PAGE = 8;
 
@@ -18,14 +19,19 @@ function setupProductHandler(bot) {
         const data = query.data;
         if (!data) return;
 
-        if (data === 'menu_products' || data === 'menu_products:refresh') {
+        if (data === CALLBACKS.NOOP) {
+            bot.answerCallbackQuery(query.id);
+            return;
+        }
+
+        if (data === CALLBACKS.MENU_PRODUCTS || data === CALLBACKS.MENU_PRODUCTS_REFRESH) {
             bot.answerCallbackQuery(query.id);
             showProductList(bot, query.message.chat.id, query.message.message_id, 1);
             return;
         }
 
-        if (data.startsWith('menu_products:page:')) {
-            const page = Number.parseInt(data.replace('menu_products:page:', ''), 10);
+        if (data.startsWith(CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX)) {
+            const page = Number.parseInt(data.replace(CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX, ''), 10);
             bot.answerCallbackQuery(query.id);
             showProductList(bot, query.message.chat.id, query.message.message_id, Number.isFinite(page) ? page : 1);
             return;
@@ -60,7 +66,7 @@ function showProductList(bot, chatId, messageId = null, page = 1) {
         const options = {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '🏠 Menu chính', callback_data: 'menu_main' }],
+                    [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
                 ],
             },
         };
@@ -93,21 +99,21 @@ function showProductList(bot, chatId, messageId = null, page = 1) {
     if (totalPages > 1) {
         const navRow = [];
         if (safePage > 1) {
-            navRow.push({ text: '⬅️ Trước', callback_data: `menu_products:page:${safePage - 1}` });
+            navRow.push({ text: '⬅️ Trước', callback_data: `${CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX}${safePage - 1}` });
         }
-        navRow.push({ text: `📄 ${safePage}/${totalPages}`, callback_data: 'noop' });
+        navRow.push({ text: `📄 ${safePage}/${totalPages}`, callback_data: CALLBACKS.NOOP });
         if (safePage < totalPages) {
-            navRow.push({ text: 'Sau ➡️', callback_data: `menu_products:page:${safePage + 1}` });
+            navRow.push({ text: 'Sau ➡️', callback_data: `${CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX}${safePage + 1}` });
         }
         keyboard.push(navRow);
     }
 
     keyboard.push([
-        { text: '🔄 Làm mới', callback_data: 'menu_products:refresh' },
+        { text: '🔄 Làm mới', callback_data: CALLBACKS.MENU_PRODUCTS_REFRESH },
         { text: '💬 Hỗ trợ', url: config.supportUrl },
     ]);
 
-    keyboard.push([{ text: '🏠 Menu chính', callback_data: 'menu_main' }]);
+    keyboard.push([{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }]);
 
     const options = {
         parse_mode: 'Markdown',
@@ -133,7 +139,7 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
             message_id: messageId,
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '↩️ Quay lại', callback_data: `menu_products:page:${page}` }],
+                    [{ text: '↩️ Quay lại', callback_data: `${CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX}${page}` }],
                 ],
             },
         }).catch(() => { });
@@ -158,12 +164,12 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
     const keyboard = [];
 
     if (product.stock > 0) {
-        keyboard.push([{ text: '🛒 Mua Ngay', callback_data: `buy_${product.id}` }]);
+        keyboard.push([{ text: '🛒 Mua Ngay', callback_data: `${CALLBACKS.BUY_PREFIX}${product.id}` }]);
     } else {
-        keyboard.push([{ text: '❌ Hết hàng', callback_data: 'noop' }]);
+        keyboard.push([{ text: '❌ Hết hàng', callback_data: CALLBACKS.NOOP }]);
     }
 
-    keyboard.push([{ text: '↩️ Quay lại', callback_data: `menu_products:page:${page}` }]);
+    keyboard.push([{ text: '↩️ Quay lại', callback_data: `${CALLBACKS.MENU_PRODUCTS_PAGE_PREFIX}${page}` }]);
     keyboard.push([{ text: '💬 Hỗ trợ', url: config.supportUrl }]);
 
     bot.editMessageText(text, {
