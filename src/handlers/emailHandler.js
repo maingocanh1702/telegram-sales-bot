@@ -32,6 +32,13 @@ function setupEmailHandler(bot) {
         const field = state.fields[state.currentFieldIndex];
         const input = msg.text.trim();
 
+        // Guard: if field is undefined (index out of bounds), clean up stale state
+        if (!field) {
+            console.error(`⚠️ emailHandler: field undefined for user ${userId}, fieldIndex=${state.currentFieldIndex}, fields.length=${state.fields.length}. Cleaning up stale state.`);
+            waitingForInfo.delete(userId);
+            return;
+        }
+
         // Validate email fields
         if (field.type === 'email') {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
