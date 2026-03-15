@@ -1926,6 +1926,7 @@ Số Lượng Đang Hiện Có 10"
           <td>
             <div class="toolbar" style="gap:4px">
               <button class="btn btn-sm btn-ghost" onclick="openDiscountModal(${d.id})" title="Sửa">✏️</button>
+              <button class="btn btn-sm btn-ghost" onclick="recalcDiscount(${d.id})" title="Tính lại lượt dùng">🔄</button>
               <button class="btn btn-sm btn-ghost" onclick="toggleDiscount(${d.id},${d.is_active?0:1})" title="${d.is_active?'Tắt':'Bật'}">${d.is_active?'🔴':'🟢'}</button>
               <button class="btn btn-sm btn-ghost" onclick="deleteDiscount(${d.id})" title="Xóa">🗑</button>
             </div>
@@ -2009,6 +2010,14 @@ Số Lượng Đang Hiện Có 10"
       try {
         await apiFetch(`/discounts/${id}`, { method: 'PUT', body: { is_active: newState } });
         toast(newState ? 'Đã bật mã giảm giá' : 'Đã tắt mã giảm giá');
+        loadDiscounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function recalcDiscount(id) {
+      try {
+        const result = await apiFetch(`/discounts/${id}/recalc`, { method: 'POST' });
+        toast(result.message);
         loadDiscounts();
       } catch (e) { toast(e.message, 'error'); }
     }

@@ -117,10 +117,8 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
             discountAmount: finalDiscountAmount,
         });
 
-        // Record discount usage
-        if (discountId && discountCode) {
-            db.useDiscountCode(discountId, userId, orderCode);
-        }
+        // Note: discount usage is recorded on payment confirmation, not here
+        // (see webhookHandler.js)
 
         // Note: invite/preorder stock is now computed dynamically from order count
 

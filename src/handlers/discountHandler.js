@@ -67,6 +67,7 @@ function setupDiscountHandler(bot) {
         const state = waitingForDiscount.get(userId);
         if (!state.awaitingInput) return;
         if (!msg.text) return;
+        if (msg.text.startsWith('/')) return; // Skip bot commands
 
         const code = msg.text.trim().toUpperCase();
         const product = db.getProductById(state.pending.productId);
@@ -100,7 +101,11 @@ function setupDiscountHandler(bot) {
         text += `🎟 Mã: **${discount.code}**\n`;
         text += `📦 SP: **${product.name}** x${state.pending.quantity}\n`;
         text += `💰 Giá gốc: ${formatPrice(orderAmount)}\n`;
-        text += `🔥 Giảm: -${formatPrice(discountAmount)} (${discountLabel})\n`;
+        if (discount.max_discount_qty && discount.max_discount_qty > 0 && discount.max_discount_qty < state.pending.quantity) {
+            text += `🔥 Giảm ${discountLabel} cho ${discount.max_discount_qty}/${state.pending.quantity} SP: -${formatPrice(discountAmount)}\n`;
+        } else {
+            text += `🔥 Giảm: -${formatPrice(discountAmount)} (${discountLabel})\n`;
+        }
         text += `💵 **Tổng thanh toán: ${formatPrice(finalAmount)}**\n`;
 
         waitingForDiscount.delete(userId);
@@ -213,6 +218,9 @@ function formatDiscountLine(discount) {
 
     let line = `  🏷 \`${discount.code}\` — ${valueLabel}`;
 
+    if (discount.max_discount_qty && discount.max_discount_qty > 0) {
+        line += ` (cho ${discount.max_discount_qty} SP)`;
+    }
     if (discount.max_discount_amount && discount.type === 'percent') {
         line += ` (tối đa ${formatPrice(discount.max_discount_amount)})`;
     }
