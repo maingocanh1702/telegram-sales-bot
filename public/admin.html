@@ -975,6 +975,7 @@ Số Lượng Đang Hiện Có 10"
         <div class="form-group"><label>Lượt/người</label><input type="number" id="dMaxUsesPerUser" placeholder="0 = không giới hạn"></div>
         <div class="form-group" style="grid-column:span 2"><label>Số SP được giảm giá / đơn</label><input type="number" id="dMaxDiscountQty" placeholder="0 = tất cả SL trong đơn"></div>
         <div class="form-group" style="grid-column:span 2"><label>Yêu cầu nhóm Telegram (Group ID)</label><input type="text" id="dRequiredGroupId" placeholder="VD: -1001234567890 (để trống = không yêu cầu)"></div>
+        <div class="form-group" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="dIsHidden"> Ẩn mã — không hiển khi tìm kiếm, nhưng vẫn dùng được nếu biết mã</label></div>
         <div class="form-group"><label>Bắt đầu</label><input type="datetime-local" id="dStartsAt"></div>
         <div class="form-group"><label>Hết hạn</label><input type="datetime-local" id="dExpiresAt"></div>
       </div>
@@ -1964,12 +1965,14 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('dMaxUsesPerUser').value = d.max_uses_per_user || '';
         document.getElementById('dMaxDiscountQty').value = d.max_discount_qty || '';
         document.getElementById('dRequiredGroupId').value = d.required_group_id || '';
+        document.getElementById('dIsHidden').checked = !!d.is_hidden;
         document.getElementById('dStartsAt').value = d.starts_at ? toLocalDatetime(d.starts_at) : '';
         document.getElementById('dExpiresAt').value = d.expires_at ? toLocalDatetime(d.expires_at) : '';
       } else {
         document.getElementById('discountModalTitle').textContent = 'Tạo mã giảm giá';
         document.getElementById('editDiscountId').value = '';
         ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dMaxDiscountQty','dRequiredGroupId','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('dIsHidden').checked = false;
         document.getElementById('dType').value = 'percent';
         document.getElementById('dProductId').value = '';
       }
@@ -1989,6 +1992,7 @@ Số Lượng Đang Hiện Có 10"
         max_uses_per_user: parseInt(document.getElementById('dMaxUsesPerUser').value) || 0,
         max_discount_qty: parseInt(document.getElementById('dMaxDiscountQty').value) || 0,
         required_group_id: document.getElementById('dRequiredGroupId').value.trim() || null,
+        is_hidden: document.getElementById('dIsHidden').checked ? 1 : 0,
         starts_at: document.getElementById('dStartsAt').value ? new Date(document.getElementById('dStartsAt').value).toISOString() : null,
         expires_at: document.getElementById('dExpiresAt').value ? new Date(document.getElementById('dExpiresAt').value).toISOString() : null,
       };
