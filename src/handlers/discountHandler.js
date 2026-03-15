@@ -138,6 +138,7 @@ function promptDiscount(bot, data) {
     const text = `🎟 **Bạn có mã giảm giá không?**\n\n` +
         `📦 SP: **${product ? product.name : 'N/A'}** x${data.quantity}\n` +
         `💰 Tạm tính: **${formatPrice(orderAmount)}**\n\n` +
+        `💡 Gõ /discount để xem mã giảm giá hiện có\n` +
         `Chọn bên dưới:`;
 
     bot.sendMessage(chatId, text, {
