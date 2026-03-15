@@ -173,6 +173,7 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]'`,
         `ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0`,
         `ALTER TABLE products ADD COLUMN preorder_stock INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN max_per_user INTEGER DEFAULT 0`,
         `ALTER TABLE orders ADD COLUMN discount_code TEXT`,
         `ALTER TABLE orders ADD COLUMN discount_amount INTEGER DEFAULT 0`,
     ];
@@ -656,6 +657,8 @@ module.exports = {
     deleteDiscountCode,
     getDiscountUsageStats,
     getActiveDiscountCodes,
+    // User purchase limit
+    getUserProductPurchaseCount,
 };
 
 // ==================== Settings ====================
@@ -960,4 +963,15 @@ function getDiscountUsageStats(discountId) {
     while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
+}
+
+/**
+ * Count how many units of a product a user has purchased (paid orders)
+ */
+function getUserProductPurchaseCount(userId, productId) {
+    const result = db.exec(
+        `SELECT COALESCE(SUM(quantity), 0) as total FROM orders WHERE telegram_user_id = ? AND product_id = ? AND status IN ('paid', 'delivered')`,
+        [userId, productId]
+    );
+    return result.length > 0 ? result[0].values[0][0] : 0;
 }

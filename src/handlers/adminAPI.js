@@ -81,6 +81,10 @@ function setupAdminAPI(app, bot) {
             if (customerFields && (productType === 'invite' || productType === 'preorder')) {
                 db.updateProduct(id, { customer_fields: JSON.stringify(customerFields) });
             }
+            // Save max_per_user
+            if (req.body.maxPerUser !== undefined) {
+                db.updateProduct(id, { max_per_user: parseInt(req.body.maxPerUser) || 0 });
+            }
             res.json({ id, message: 'Product added' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
@@ -103,6 +107,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.subscriptionDays !== undefined) updates.subscription_days = req.body.subscriptionDays ? parseInt(req.body.subscriptionDays) : null;
             if (req.body.customerFields !== undefined) updates.customer_fields = JSON.stringify(req.body.customerFields);
             if (req.body.preorderStock !== undefined) updates.preorder_stock = parseInt(req.body.preorderStock) || 0;
+            if (req.body.maxPerUser !== undefined) updates.max_per_user = parseInt(req.body.maxPerUser) || 0;
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {
