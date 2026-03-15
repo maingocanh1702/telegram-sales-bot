@@ -798,20 +798,23 @@ function getDiscountCodes() {
  * Get active, non-expired discount codes for public display
  */
 function getActiveDiscountCodes() {
-    const now = new Date().toISOString();
+    const now = Date.now();
     const stmt = db.prepare(`
     SELECT dc.*, p.name as product_name
     FROM discount_codes dc
     LEFT JOIN products p ON dc.product_id = p.id
     WHERE dc.is_active = 1
-      AND (dc.starts_at IS NULL OR dc.starts_at <= ?)
-      AND (dc.expires_at IS NULL OR dc.expires_at >= ?)
       AND (dc.max_uses = 0 OR dc.used_count < dc.max_uses)
     ORDER BY dc.product_id IS NULL DESC, p.name ASC, dc.code ASC
   `);
-    stmt.bind([now, now]);
     const results = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        // Filter by date using Date objects (handles local + UTC)
+        if (row.starts_at && new Date(row.starts_at).getTime() > now) continue;
+        if (row.expires_at && new Date(row.expires_at).getTime() < now) continue;
+        results.push(row);
+    }
     stmt.free();
     return results;
 }
@@ -859,12 +862,12 @@ function validateDiscountCode(code, userId, orderAmount, productId) {
         return { valid: false, reason: 'Mã giảm giá đã bị vô hiệu hóa.' };
     }
 
-    // Check date range
-    const now = new Date().toISOString();
-    if (discount.starts_at && now < discount.starts_at) {
+    // Check date range (use Date objects to handle timezone correctly)
+    const now = Date.now();
+    if (discount.starts_at && new Date(discount.starts_at).getTime() > now) {
         return { valid: false, reason: 'Mã giảm giá chưa đến thời gian áp dụng.' };
     }
-    if (discount.expires_at && now > discount.expires_at) {
+    if (discount.expires_at && new Date(discount.expires_at).getTime() < now) {
         return { valid: false, reason: 'Mã giảm giá đã hết hạn.' };
     }
 
