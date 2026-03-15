@@ -1,12 +1,20 @@
 const path = require('path');
 const fs = require('fs');
 
-// Load env vars (priority: .env > .env.railway > /tmp fallback > system env)
-const envPaths = [
-  path.join(__dirname, '..', '.env'),
-  path.join(__dirname, '..', '.env.railway'),
-  '/tmp/telegram-sales-bot/.env',
-];
+// Detect environment
+const isDev = process.env.NODE_ENV === 'development';
+
+// Load env vars (priority based on environment)
+const envPaths = isDev
+  ? [
+      path.join(__dirname, '..', '.env.development'),
+      path.join(__dirname, '..', '.env'),
+    ]
+  : [
+      path.join(__dirname, '..', '.env'),
+      path.join(__dirname, '..', '.env.railway'),
+      '/tmp/telegram-sales-bot/.env',
+    ];
 
 const envFile = envPaths.find((p) => fs.existsSync(p));
 if (envFile) {
@@ -15,6 +23,12 @@ if (envFile) {
 } else {
   console.log('ℹ️  No .env file found, using system environment variables');
 }
+
+// Log masked token for verification
+const tokenPreview = process.env.BOT_TOKEN
+  ? `${process.env.BOT_TOKEN.slice(0, 6)}...${process.env.BOT_TOKEN.slice(-4)}`
+  : 'NOT SET';
+console.log(`🔑 Bot token: ${tokenPreview} (${isDev ? 'DEV' : 'PROD'})`);
 
 const config = {
   // Telegram Bot

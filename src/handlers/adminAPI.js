@@ -433,6 +433,82 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // ==================== Discount Codes ====================
+
+    app.get('/api/admin/discounts', (req, res) => {
+        try {
+            res.json(db.getDiscountCodes());
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.post('/api/admin/discounts', (req, res) => {
+        try {
+            const { code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, starts_at, expires_at } = req.body;
+            if (!code || !value) {
+                return res.status(400).json({ error: true, message: 'Code and value required', code: 'VALIDATION_ERROR' });
+            }
+            if (type && !['percent', 'fixed'].includes(type)) {
+                return res.status(400).json({ error: true, message: 'Type must be percent or fixed', code: 'VALIDATION_ERROR' });
+            }
+            // Check duplicate code
+            const existing = db.getDiscountCodeByCode(code);
+            if (existing) {
+                return res.status(400).json({ error: true, message: 'Mã giảm giá đã tồn tại', code: 'DUPLICATE_CODE' });
+            }
+            const id = db.createDiscountCode({
+                code, type, value, product_id, min_order_amount, max_discount_amount,
+                max_uses, max_uses_per_user, starts_at, expires_at,
+            });
+            res.json({ id, message: 'Discount code created' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.put('/api/admin/discounts/:id', (req, res) => {
+        try {
+            const updates = {};
+            const allowed = ['code', 'type', 'value', 'product_id', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'starts_at', 'expires_at', 'is_active'];
+            for (const key of allowed) {
+                if (req.body[key] !== undefined) {
+                    if (['value', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user'].includes(key)) {
+                        updates[key] = req.body[key] !== null && req.body[key] !== '' ? parseInt(req.body[key]) : null;
+                    } else if (key === 'is_active') {
+                        updates[key] = req.body[key] ? 1 : 0;
+                    } else if (key === 'code') {
+                        updates[key] = req.body[key].toUpperCase().trim();
+                    } else {
+                        updates[key] = req.body[key] || null;
+                    }
+                }
+            }
+            db.updateDiscountCode(parseInt(req.params.id), updates);
+            res.json({ message: 'Discount code updated' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.delete('/api/admin/discounts/:id', (req, res) => {
+        try {
+            db.deleteDiscountCode(parseInt(req.params.id));
+            res.json({ message: 'Discount code deleted' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.get('/api/admin/discounts/:id/usage', (req, res) => {
+        try {
+            const stats = db.getDiscountUsageStats(parseInt(req.params.id));
+            res.json(stats);
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     console.log('🔧 Admin API ready at /api/admin/*');
 }
 

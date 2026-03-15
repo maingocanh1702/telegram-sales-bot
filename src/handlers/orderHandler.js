@@ -8,8 +8,13 @@ const { CALLBACKS } = require('./callbacks');
  * Handle order creation, cancellation, and history
  */
 function setupOrderHandler(bot) {
-    // Listen for quantity_selected event from quantityHandler
+    // Listen for quantity_selected → route to discount prompt
     bot.on('quantity_selected', (data) => {
+        bot.emit('discount_prompt', data);
+    });
+
+    // Listen for order_confirmed (after discount step)
+    bot.on('order_confirmed', (data) => {
         createOrder(bot, data);
     });
 
@@ -59,7 +64,7 @@ function setupOrderHandler(bot) {
 /**
  * Create a new order and show QR code
  */
-async function createOrder(bot, { chatId, messageId, userId, username, productId, quantity, customerEmail }) {
+async function createOrder(bot, { chatId, messageId, userId, username, productId, quantity, customerEmail, discountCode, discountId, discountAmount }) {
     try {
         const product = db.getProductById(productId);
 
@@ -78,7 +83,9 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
             return;
         }
 
-        const totalAmount = product.price * quantity;
+        const originalAmount = product.price * quantity;
+        const finalDiscountAmount = discountAmount || 0;
+        const totalAmount = originalAmount - finalDiscountAmount;
         const expiresAt = new Date(Date.now() + config.orderExpiryMinutes * 60 * 1000).toISOString();
 
         const orderCode = db.createOrder({
@@ -92,7 +99,14 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
             qrUrl: '',
             expiresAt,
             customerEmail: customerEmail || null,
+            discountCode: discountCode || null,
+            discountAmount: finalDiscountAmount,
         });
+
+        // Record discount usage
+        if (discountId && discountCode) {
+            db.useDiscountCode(discountId, userId, orderCode);
+        }
 
         // Note: invite/preorder stock is now computed dynamically from order count
 
@@ -103,7 +117,13 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
         let text = `🧾 **ĐƠN HÀNG MỚI: #${orderCode}**\n\n`;
         text += `📦 SP: ${product.name}\n`;
         text += `🔢 SL: ${quantity}\n`;
-        text += `💰 Tổng: **${formatPrice(totalAmount)}**\n`;
+        if (finalDiscountAmount > 0) {
+            text += `💰 Giá gốc: ${formatPrice(originalAmount)}\n`;
+            text += `🎟 Mã giảm giá: **${discountCode}** (-${formatPrice(finalDiscountAmount)})\n`;
+            text += `💵 **Thanh toán: ${formatPrice(totalAmount)}**\n`;
+        } else {
+            text += `💰 Tổng: **${formatPrice(totalAmount)}**\n`;
+        }
         if (customerEmail) {
             text += `📧 Email: **${customerEmail}**\n`;
         }
@@ -311,7 +331,11 @@ function showOrderDetail(bot, chatId, messageId, orderCode) {
     text += `• Tên: **${order.product_name}**\n`;
     text += `• Số lượng: **${order.quantity}**\n`;
     text += `• Đơn giá: **${formatPrice(order.unit_price)}**\n`;
-    text += `• Tổng tiền: **${formatPrice(order.total_amount)}**\n\n`;
+    text += `• Tổng tiền: **${formatPrice(order.total_amount)}**\n`;
+    if (order.discount_code) {
+        text += `🎟 Mã giảm giá: **${order.discount_code}** (-${formatPrice(order.discount_amount || 0)})\n`;
+    }
+    text += `\n`;
 
     if (order.customer_email) {
         text += `📧 **Email KH:** ${order.customer_email}\n\n`;

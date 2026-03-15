@@ -642,6 +642,9 @@
         <a onclick="showSection('broadcast')">
           <span class="material-symbols-rounded">campaign</span> Thông báo
         </a>
+        <a onclick="showSection('discounts')">
+          <span class="material-symbols-rounded">confirmation_number</span> Mã giảm giá
+        </a>
       </nav>
     </aside>
 
@@ -798,6 +801,21 @@ Số Lượng Đang Hiện Có 10"
             href="https://www.vietqr.io/danh-sach-ngan-hang" target="_blank" style="color:var(--accent)">vietqr.io</a>.
           TK đang active sẽ được dùng cho đơn hàng mới.</p>
       </div>
+
+      <div class="section" id="sec-discounts">
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <h1>🎟 Mã giảm giá</h1>
+            <p>Quản lý mã giảm giá / coupon cho khách hàng</p>
+          </div>
+          <button class="btn btn-primary" onclick="openDiscountModal()">
+            <span class="material-symbols-rounded" style="font-size:16px">add</span> Tạo mã
+          </button>
+        </div>
+        <div class="card">
+          <div id="discountsTable"></div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -923,6 +941,39 @@ Số Lượng Đang Hiện Có 10"
     </div>
   </div>
 
+  <!-- Discount Code Modal -->
+  <div class="modal-overlay" id="discountModal">
+    <div class="modal">
+      <h3 id="discountModalTitle">Tạo mã giảm giá</h3>
+      <input type="hidden" id="editDiscountId">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label>Mã code</label><input id="dCode" placeholder="VD: SALE50" style="text-transform:uppercase"></div>
+        <div class="form-group">
+          <label>Loại giảm giá</label>
+          <select id="dType">
+            <option value="percent">% Phần trăm</option>
+            <option value="fixed">₫ Số tiền cố định</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Giá trị</label><input type="number" id="dValue" placeholder="50 (= 50% hoặc 50,000đ)"></div>
+        <div class="form-group">
+          <label>Áp dụng cho SP</label>
+          <select id="dProductId"><option value="">— Tất cả sản phẩm —</option></select>
+        </div>
+        <div class="form-group"><label>Đơn tối thiểu (₫)</label><input type="number" id="dMinOrder" placeholder="0"></div>
+        <div class="form-group"><label>Giảm tối đa (₫)</label><input type="number" id="dMaxDiscount" placeholder="Không giới hạn"></div>
+        <div class="form-group"><label>Tổng lượt dùng</label><input type="number" id="dMaxUses" placeholder="0 = không giới hạn"></div>
+        <div class="form-group"><label>Lượt/người</label><input type="number" id="dMaxUsesPerUser" placeholder="0 = không giới hạn"></div>
+        <div class="form-group"><label>Bắt đầu</label><input type="datetime-local" id="dStartsAt"></div>
+        <div class="form-group"><label>Hết hạn</label><input type="datetime-local" id="dExpiresAt"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('discountModal')">Hủy</button>
+        <button class="btn btn-primary" onclick="saveDiscount()">Lưu</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let API_KEY = '';
     const API = '/api/admin';
@@ -990,6 +1041,7 @@ Số Lượng Đang Hiện Có 10"
       if (name === 'orders') loadOrders();
       if (name === 'customers') loadCustomers();
       if (name === 'settings') loadBankAccounts();
+      if (name === 'discounts') loadDiscounts();
     }
 
     // ==================== Dashboard ====================
@@ -1812,11 +1864,146 @@ Số Lượng Đang Hiện Có 10"
       } catch (e) { toast(e.message, 'error'); }
     }
 
+    // ==================== Discount Codes ====================
+    let discountsCache = [];
+
+    async function loadDiscounts() {
+      try {
+        discountsCache = await apiFetch('/discounts');
+        renderDiscountsTable();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function renderDiscountsTable() {
+      const container = document.getElementById('discountsTable');
+      if (!discountsCache.length) {
+        container.innerHTML = `<div class="empty-state"><span class="material-symbols-rounded">confirmation_number</span><p>Chưa có mã giảm giá nào</p></div>`;
+        return;
+      }
+      let html = `<table><thead><tr>
+        <th>Mã</th><th>Loại</th><th>Giá trị</th><th>SP</th><th>Đã dùng</th><th>Trạng thái</th><th>Hạn</th><th></th>
+      </tr></thead><tbody>`;
+      for (const d of discountsCache) {
+        const valueLabel = d.type === 'percent' ? `${d.value}%` : formatMoney(d.value);
+        const productLabel = d.product_name ? d.product_name : '<span style="color:var(--text-muted)">Tất cả</span>';
+        const usageLabel = d.max_uses > 0 ? `${d.used_count}/${d.max_uses}` : `${d.used_count}/∞`;
+        const isExpired = d.expires_at && new Date(d.expires_at) < new Date();
+        let statusBadge;
+        if (!d.is_active) {
+          statusBadge = '<span class="badge badge-muted">Tắt</span>';
+        } else if (isExpired) {
+          statusBadge = '<span class="badge badge-danger">Hết hạn</span>';
+        } else {
+          statusBadge = '<span class="badge badge-success">Active</span>';
+        }
+        const expiresLabel = d.expires_at ? new Date(d.expires_at).toLocaleDateString('vi-VN') : '—';
+        html += `<tr>
+          <td><strong>${d.code}</strong></td>
+          <td>${d.type === 'percent' ? '📊 %' : '💰 VNĐ'}</td>
+          <td><strong>${valueLabel}</strong></td>
+          <td>${productLabel}</td>
+          <td>${usageLabel}</td>
+          <td>${statusBadge}</td>
+          <td>${expiresLabel}</td>
+          <td>
+            <div class="toolbar" style="gap:4px">
+              <button class="btn btn-sm btn-ghost" onclick="openDiscountModal(${d.id})" title="Sửa">✏️</button>
+              <button class="btn btn-sm btn-ghost" onclick="toggleDiscount(${d.id},${d.is_active?0:1})" title="${d.is_active?'Tắt':'Bật'}">${d.is_active?'🔴':'🟢'}</button>
+              <button class="btn btn-sm btn-ghost" onclick="deleteDiscount(${d.id})" title="Xóa">🗑</button>
+            </div>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    async function openDiscountModal(editId) {
+      // Populate product dropdown
+      if (!productsCache.length) {
+        try { productsCache = await apiFetch('/products'); } catch(e) {}
+      }
+      const sel = document.getElementById('dProductId');
+      sel.innerHTML = '<option value="">— Tất cả sản phẩm —</option>';
+      productsCache.forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+      });
+
+      if (editId) {
+        const d = discountsCache.find(x => x.id === editId);
+        if (!d) return;
+        document.getElementById('discountModalTitle').textContent = 'Sửa mã giảm giá';
+        document.getElementById('editDiscountId').value = d.id;
+        document.getElementById('dCode').value = d.code;
+        document.getElementById('dType').value = d.type;
+        document.getElementById('dValue').value = d.value;
+        document.getElementById('dProductId').value = d.product_id || '';
+        document.getElementById('dMinOrder').value = d.min_order_amount || '';
+        document.getElementById('dMaxDiscount').value = d.max_discount_amount || '';
+        document.getElementById('dMaxUses').value = d.max_uses || '';
+        document.getElementById('dMaxUsesPerUser').value = d.max_uses_per_user || '';
+        document.getElementById('dStartsAt').value = d.starts_at ? d.starts_at.slice(0,16) : '';
+        document.getElementById('dExpiresAt').value = d.expires_at ? d.expires_at.slice(0,16) : '';
+      } else {
+        document.getElementById('discountModalTitle').textContent = 'Tạo mã giảm giá';
+        document.getElementById('editDiscountId').value = '';
+        ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('dType').value = 'percent';
+        document.getElementById('dProductId').value = '';
+      }
+      document.getElementById('discountModal').classList.add('active');
+    }
+
+    async function saveDiscount() {
+      const editId = document.getElementById('editDiscountId').value;
+      const data = {
+        code: document.getElementById('dCode').value,
+        type: document.getElementById('dType').value,
+        value: parseInt(document.getElementById('dValue').value) || 0,
+        product_id: document.getElementById('dProductId').value ? parseInt(document.getElementById('dProductId').value) : null,
+        min_order_amount: parseInt(document.getElementById('dMinOrder').value) || 0,
+        max_discount_amount: parseInt(document.getElementById('dMaxDiscount').value) || null,
+        max_uses: parseInt(document.getElementById('dMaxUses').value) || 0,
+        max_uses_per_user: parseInt(document.getElementById('dMaxUsesPerUser').value) || 0,
+        starts_at: document.getElementById('dStartsAt').value || null,
+        expires_at: document.getElementById('dExpiresAt').value || null,
+      };
+      if (!data.code || !data.value) {
+        toast('Mã code và giá trị là bắt buộc', 'error');
+        return;
+      }
+      try {
+        if (editId) {
+          await apiFetch(`/discounts/${editId}`, { method: 'PUT', body: JSON.stringify(data) });
+          toast('Đã cập nhật mã giảm giá!');
+        } else {
+          await apiFetch('/discounts', { method: 'POST', body: JSON.stringify(data) });
+          toast('Đã tạo mã giảm giá!');
+        }
+        closeModal('discountModal');
+        loadDiscounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function toggleDiscount(id, newState) {
+      try {
+        await apiFetch(`/discounts/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: newState }) });
+        toast(newState ? 'Đã bật mã giảm giá' : 'Đã tắt mã giảm giá');
+        loadDiscounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function deleteDiscount(id) {
+      if (!confirm('Xóa mã giảm giá này?')) return;
+      try {
+        await apiFetch(`/discounts/${id}`, { method: 'DELETE' });
+        toast('Đã xóa mã giảm giá');
+        loadDiscounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
     // ==================== Helpers ====================
     function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-    document.querySelectorAll('.modal-overlay').forEach(o => {
-      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); });
-    });
   </script>
 </body>
 
