@@ -969,6 +969,7 @@ Số Lượng Đang Hiện Có 10"
         <div class="form-group"><label>Giảm tối đa (₫)</label><input type="number" id="dMaxDiscount" placeholder="Không giới hạn"></div>
         <div class="form-group"><label>Tổng lượt dùng</label><input type="number" id="dMaxUses" placeholder="0 = không giới hạn"></div>
         <div class="form-group"><label>Lượt/người</label><input type="number" id="dMaxUsesPerUser" placeholder="0 = không giới hạn"></div>
+        <div class="form-group" style="grid-column:span 2"><label>Số SP được giảm giá / đơn</label><input type="number" id="dMaxDiscountQty" placeholder="0 = tất cả SL trong đơn"></div>
         <div class="form-group"><label>Bắt đầu</label><input type="datetime-local" id="dStartsAt"></div>
         <div class="form-group"><label>Hết hạn</label><input type="datetime-local" id="dExpiresAt"></div>
       </div>
@@ -1955,12 +1956,13 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('dMaxDiscount').value = d.max_discount_amount || '';
         document.getElementById('dMaxUses').value = d.max_uses || '';
         document.getElementById('dMaxUsesPerUser').value = d.max_uses_per_user || '';
+        document.getElementById('dMaxDiscountQty').value = d.max_discount_qty || '';
         document.getElementById('dStartsAt').value = d.starts_at ? toLocalDatetime(d.starts_at) : '';
         document.getElementById('dExpiresAt').value = d.expires_at ? toLocalDatetime(d.expires_at) : '';
       } else {
         document.getElementById('discountModalTitle').textContent = 'Tạo mã giảm giá';
         document.getElementById('editDiscountId').value = '';
-        ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
+        ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dMaxDiscountQty','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('dType').value = 'percent';
         document.getElementById('dProductId').value = '';
       }
@@ -1978,6 +1980,7 @@ Số Lượng Đang Hiện Có 10"
         max_discount_amount: parseInt(document.getElementById('dMaxDiscount').value) || null,
         max_uses: parseInt(document.getElementById('dMaxUses').value) || 0,
         max_uses_per_user: parseInt(document.getElementById('dMaxUsesPerUser').value) || 0,
+        max_discount_qty: parseInt(document.getElementById('dMaxDiscountQty').value) || 0,
         starts_at: document.getElementById('dStartsAt').value ? new Date(document.getElementById('dStartsAt').value).toISOString() : null,
         expires_at: document.getElementById('dExpiresAt').value ? new Date(document.getElementById('dExpiresAt').value).toISOString() : null,
       };
