@@ -146,8 +146,9 @@ function showProductList(bot, chatId, messageId = null) {
         if (catRow.length > 0) keyboard.push([...catRow]);
     }
 
-    // Uncategorized products
-    const uncategorized = allProducts.filter(p => !p.category_id);
+    // Uncategorized products (excluding featured ones already shown at top)
+    const featuredIds = new Set(featured.map(p => p.id));
+    const uncategorized = allProducts.filter(p => !p.category_id && !featuredIds.has(p.id));
     if (uncategorized.length > 0) {
         if (categories.length > 0) {
             text += '\n📋 **Sản phẩm khác:**\n';
