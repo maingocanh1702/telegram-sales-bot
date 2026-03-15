@@ -26,6 +26,10 @@ const CALLBACKS = {
     // Help
     SHOW_GUIDE: 'show_guide',
 
+    // Discount
+    DISCOUNT_SKIP: 'discount_skip',
+    DISCOUNT_ENTER: 'discount_enter',
+
     // Misc
     NOOP: 'noop',
 };

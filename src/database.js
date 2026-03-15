@@ -127,6 +127,39 @@ async function initDatabase() {
     )
   `);
 
+    // Discount codes
+    db.run(`
+    CREATE TABLE IF NOT EXISTS discount_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL DEFAULT 'percent',
+      value INTEGER NOT NULL,
+      product_id INTEGER,
+      min_order_amount INTEGER DEFAULT 0,
+      max_discount_amount INTEGER,
+      max_uses INTEGER DEFAULT 0,
+      max_uses_per_user INTEGER DEFAULT 0,
+      used_count INTEGER DEFAULT 0,
+      starts_at TEXT,
+      expires_at TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    )
+  `);
+
+    // Discount usage tracking
+    db.run(`
+    CREATE TABLE IF NOT EXISTS discount_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      discount_code_id INTEGER NOT NULL,
+      telegram_user_id INTEGER NOT NULL,
+      order_code TEXT,
+      used_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (discount_code_id) REFERENCES discount_codes(id)
+    )
+  `);
+
     // ==================== Migrations ====================
     // Add new columns to existing tables (safe to run multiple times)
     const migrations = [
@@ -140,6 +173,8 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]'`,
         `ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0`,
         `ALTER TABLE products ADD COLUMN preorder_stock INTEGER DEFAULT 0`,
+        `ALTER TABLE orders ADD COLUMN discount_code TEXT`,
+        `ALTER TABLE orders ADD COLUMN discount_amount INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -347,12 +382,12 @@ function generateOrderCode() {
     return `ORD${timestamp}${random}`;
 }
 
-function createOrder({ telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, qrUrl, expiresAt, customerEmail }) {
+function createOrder({ telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, qrUrl, expiresAt, customerEmail, discountCode, discountAmount }) {
     const orderCode = generateOrderCode();
     db.run(
-        `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount, payment_code, qr_url, expires_at, customer_email)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [orderCode, telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, orderCode, qrUrl, expiresAt, customerEmail || null]
+        `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount, payment_code, qr_url, expires_at, customer_email, discount_code, discount_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderCode, telegramUserId, telegramUsername, productId, productName, quantity, unitPrice, totalAmount, orderCode, qrUrl, expiresAt, customerEmail || null, discountCode || null, discountAmount || 0]
     );
     saveDatabase();
     return orderCode;
@@ -610,6 +645,17 @@ module.exports = {
     getAllBankAccounts,
     setActiveBankAccount,
     deleteBankAccount,
+    // Discount codes
+    createDiscountCode,
+    getDiscountCodes,
+    getDiscountCodeById,
+    getDiscountCodeByCode,
+    validateDiscountCode,
+    useDiscountCode,
+    updateDiscountCode,
+    deleteDiscountCode,
+    getDiscountUsageStats,
+    getActiveDiscountCodes,
 };
 
 // ==================== Settings ====================
@@ -708,4 +754,207 @@ function getBankConfig() {
         accountNo: config.bank.accountNo,
         accountName: config.bank.accountName,
     };
+}
+
+// ==================== Discount Codes ====================
+
+function createDiscountCode(data) {
+    db.run(
+        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, starts_at, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            data.code.toUpperCase().trim(),
+            data.type || 'percent',
+            parseInt(data.value),
+            data.product_id || null,
+            parseInt(data.min_order_amount) || 0,
+            data.max_discount_amount ? parseInt(data.max_discount_amount) : null,
+            parseInt(data.max_uses) || 0,
+            parseInt(data.max_uses_per_user) || 0,
+            data.starts_at || null,
+            data.expires_at || null,
+            data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
+        ]
+    );
+    const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+    saveDatabase();
+    return id;
+}
+
+function getDiscountCodes() {
+    const stmt = db.prepare(`
+    SELECT dc.*, p.name as product_name
+    FROM discount_codes dc
+    LEFT JOIN products p ON dc.product_id = p.id
+    ORDER BY dc.created_at DESC
+  `);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+/**
+ * Get active, non-expired discount codes for public display
+ */
+function getActiveDiscountCodes() {
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+    SELECT dc.*, p.name as product_name
+    FROM discount_codes dc
+    LEFT JOIN products p ON dc.product_id = p.id
+    WHERE dc.is_active = 1
+      AND (dc.starts_at IS NULL OR dc.starts_at <= ?)
+      AND (dc.expires_at IS NULL OR dc.expires_at >= ?)
+      AND (dc.max_uses = 0 OR dc.used_count < dc.max_uses)
+    ORDER BY dc.product_id IS NULL DESC, p.name ASC, dc.code ASC
+  `);
+    stmt.bind([now, now]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function getDiscountCodeById(id) {
+    const stmt = db.prepare(`
+    SELECT dc.*, p.name as product_name
+    FROM discount_codes dc
+    LEFT JOIN products p ON dc.product_id = p.id
+    WHERE dc.id = ?
+  `);
+    stmt.bind([id]);
+    let result = null;
+    if (stmt.step()) result = stmt.getAsObject();
+    stmt.free();
+    return result;
+}
+
+function getDiscountCodeByCode(code) {
+    const stmt = db.prepare(`
+    SELECT dc.*, p.name as product_name
+    FROM discount_codes dc
+    LEFT JOIN products p ON dc.product_id = p.id
+    WHERE dc.code = ?
+  `);
+    stmt.bind([code.toUpperCase().trim()]);
+    let result = null;
+    if (stmt.step()) result = stmt.getAsObject();
+    stmt.free();
+    return result;
+}
+
+/**
+ * Validate a discount code for a specific user and order.
+ * Returns { valid: true, discount } or { valid: false, reason: "..." }
+ */
+function validateDiscountCode(code, userId, orderAmount, productId) {
+    const discount = getDiscountCodeByCode(code);
+
+    if (!discount) {
+        return { valid: false, reason: 'Mã giảm giá không tồn tại.' };
+    }
+
+    if (!discount.is_active) {
+        return { valid: false, reason: 'Mã giảm giá đã bị vô hiệu hóa.' };
+    }
+
+    // Check date range
+    const now = new Date().toISOString();
+    if (discount.starts_at && now < discount.starts_at) {
+        return { valid: false, reason: 'Mã giảm giá chưa đến thời gian áp dụng.' };
+    }
+    if (discount.expires_at && now > discount.expires_at) {
+        return { valid: false, reason: 'Mã giảm giá đã hết hạn.' };
+    }
+
+    // Check total usage limit
+    if (discount.max_uses > 0 && discount.used_count >= discount.max_uses) {
+        return { valid: false, reason: 'Mã giảm giá đã hết lượt sử dụng.' };
+    }
+
+    // Check per-user usage limit
+    if (discount.max_uses_per_user > 0) {
+        const userUsage = db.exec(
+            'SELECT COUNT(*) FROM discount_usage WHERE discount_code_id = ? AND telegram_user_id = ?',
+            [discount.id, userId]
+        );
+        const userUseCount = userUsage.length > 0 ? userUsage[0].values[0][0] : 0;
+        if (userUseCount >= discount.max_uses_per_user) {
+            return { valid: false, reason: 'Bạn đã sử dụng mã này đạt giới hạn.' };
+        }
+    }
+
+    // Check product-specific discount
+    if (discount.product_id && discount.product_id !== productId) {
+        const productName = discount.product_name || 'sản phẩm khác';
+        return { valid: false, reason: `Mã này chỉ áp dụng cho ${productName}.` };
+    }
+
+    // Check minimum order amount
+    if (discount.min_order_amount > 0 && orderAmount < discount.min_order_amount) {
+        return { valid: false, reason: `Đơn hàng tối thiểu ${discount.min_order_amount.toLocaleString('vi-VN')}đ để áp dụng mã này.` };
+    }
+
+    // Calculate discount amount
+    let discountAmount;
+    if (discount.type === 'percent') {
+        discountAmount = Math.floor(orderAmount * discount.value / 100);
+        if (discount.max_discount_amount && discountAmount > discount.max_discount_amount) {
+            discountAmount = discount.max_discount_amount;
+        }
+    } else {
+        // fixed
+        discountAmount = Math.min(discount.value, orderAmount);
+    }
+
+    return { valid: true, discount, discountAmount };
+}
+
+/**
+ * Record usage of a discount code
+ */
+function useDiscountCode(discountId, userId, orderCode) {
+    // Increment used_count
+    db.run('UPDATE discount_codes SET used_count = used_count + 1 WHERE id = ?', [discountId]);
+    // Log usage
+    db.run(
+        'INSERT INTO discount_usage (discount_code_id, telegram_user_id, order_code) VALUES (?, ?, ?)',
+        [discountId, userId, orderCode]
+    );
+    saveDatabase();
+}
+
+function updateDiscountCode(id, updates) {
+    const fields = [];
+    const values = [];
+    for (const [key, value] of Object.entries(updates)) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+    }
+    values.push(id);
+    db.run(`UPDATE discount_codes SET ${fields.join(', ')} WHERE id = ?`, values);
+    saveDatabase();
+}
+
+function deleteDiscountCode(id) {
+    // Delete usage records first
+    db.run('DELETE FROM discount_usage WHERE discount_code_id = ?', [id]);
+    db.run('DELETE FROM discount_codes WHERE id = ?', [id]);
+    saveDatabase();
+}
+
+function getDiscountUsageStats(discountId) {
+    const stmt = db.prepare(`
+    SELECT du.telegram_user_id, du.order_code, du.used_at, o.total_amount, o.discount_amount
+    FROM discount_usage du
+    LEFT JOIN orders o ON du.order_code = o.order_code
+    WHERE du.discount_code_id = ?
+    ORDER BY du.used_at DESC
+  `);
+    stmt.bind([discountId]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
 }

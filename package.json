@@ -5,7 +5,7 @@
     "main": "src/bot.js",
     "scripts": {
         "start": "node src/bot.js",
-        "dev": "node --watch src/bot.js",
+        "dev": "NODE_ENV=development node --watch src/bot.js",
         "seed": "node src/seed.js"
     },
     "dependencies": {

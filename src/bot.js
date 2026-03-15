@@ -17,6 +17,7 @@ const { setupAdminAPI } = require('./handlers/adminAPI');
 const { setupProfileHandler } = require('./handlers/profileHandler');
 const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler');
 const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
+const { setupDiscountHandler } = require('./handlers/discountHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
 const { setupScheduler } = require('./scheduler');
 
@@ -49,6 +50,7 @@ async function main() {
         { command: 'products', description: 'Xem danh sách sản phẩm' },
         { command: 'orders', description: 'Đơn hàng đã mua' },
         { command: 'profile', description: 'Thông tin tài khoản của bạn' },
+        { command: 'discount', description: 'Xem mã giảm giá hiện có' },
         { command: 'help', description: 'Hỗ trợ khách hàng' },
         { command: 'huongdan', description: 'Hướng dẫn sử dụng bot' },
     ]).catch((err) => {
@@ -135,6 +137,7 @@ async function main() {
     setupEmailHandler(bot);
     setupOrderHandler(bot);
     setupInviteConfirmHandler(bot);
+    setupDiscountHandler(bot);
     setupScheduler(bot);
     setupProfileHandler(bot);
     setupHelpHandler(bot);
