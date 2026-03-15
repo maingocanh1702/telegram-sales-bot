@@ -245,7 +245,7 @@ async function showAvailableDiscounts(bot, chatId, userId) {
     }
 
     text += '💡 _Nhập mã khi thanh toán để được giảm giá!_\n';
-    text += '🛒 Dùng mã ngay: /product';
+    text += '🛒 Dùng mã ngay: /products';
 
     bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
 }
