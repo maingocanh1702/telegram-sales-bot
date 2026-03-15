@@ -100,8 +100,7 @@ function showProductList(bot, chatId, messageId = null) {
         return;
     }
 
-    let text = '🛍 **DANH SÁCH SẢN PHẨM**\n';
-    text += '━━━━━━━━━━━━━━━━━━\n\n';
+    let text = '🛍 **DANH SÁCH SẢN PHẨM**\n\n';
 
     const keyboard = [];
 
@@ -109,13 +108,12 @@ function showProductList(bot, chatId, messageId = null) {
     if (featured.length > 0) {
         text += '🔥 **Sản phẩm nổi bật:**\n\n';
         for (const p of featured) {
-            const icon = p.stock > 0 ? '✅' : '❌';
+            const icon = p.stock > 0 ? '🌟' : '❌';
             keyboard.push([{
                 text: `${icon} ${p.name} — ${formatPrice(p.price)}`,
                 callback_data: `product_${p.id}_featured`,
             }]);
         }
-        keyboard.push([{ text: '━━━━━━━━━━━━━━━', callback_data: CALLBACKS.NOOP }]);
     }
 
     // 📂 Category buttons
@@ -151,7 +149,9 @@ function showProductList(bot, chatId, messageId = null) {
     // Uncategorized products
     const uncategorized = allProducts.filter(p => !p.category_id);
     if (uncategorized.length > 0) {
-        keyboard.push([{ text: '━━━━━━━━━━━━━━━', callback_data: CALLBACKS.NOOP }]);
+        if (categories.length > 0) {
+            text += '\n📋 **Sản phẩm khác:**\n';
+        }
         for (const p of uncategorized) {
             const icon = p.stock > 0 ? '✅' : '❌';
             keyboard.push([{
