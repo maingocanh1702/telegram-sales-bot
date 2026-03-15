@@ -179,6 +179,7 @@ async function initDatabase() {
         `ALTER TABLE discount_codes ADD COLUMN max_discount_qty INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN required_group_id TEXT`,
         `ALTER TABLE discount_codes ADD COLUMN is_hidden INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN is_featured INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -258,6 +259,59 @@ function getProducts() {
     console.error('❌ getProducts() SQL error:', err.message);
     return [];
   }
+}
+
+function getFeaturedProducts() {
+    const stmt = db.prepare(`
+    SELECT p.*, c.name as category_name, c.emoji as category_emoji,
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE CAST(p.is_active AS INTEGER) = 1 AND CAST(p.is_featured AS INTEGER) = 1
+    ORDER BY p.sort_order ASC, p.name ASC
+  `);
+    const results = [];
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        if (row.product_type === 'invite') {
+            row.stock = Math.max(0, (row.invite_slots || 0) - (row.order_sold || 0));
+        } else if (row.product_type === 'preorder') {
+            row.stock = Math.max(0, (row.preorder_stock || 0) - (row.order_sold || 0));
+        } else {
+            row.stock = row.credential_stock;
+        }
+        results.push(row);
+    }
+    stmt.free();
+    return results;
+}
+
+function getProductsByCategory(categoryId) {
+    const stmt = db.prepare(`
+    SELECT p.*, c.name as category_name, c.emoji as category_emoji,
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
+           (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE CAST(p.is_active AS INTEGER) = 1 AND p.category_id = ?
+    ORDER BY p.sort_order ASC, p.name ASC
+  `);
+    stmt.bind([categoryId]);
+    const results = [];
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        if (row.product_type === 'invite') {
+            row.stock = Math.max(0, (row.invite_slots || 0) - (row.order_sold || 0));
+        } else if (row.product_type === 'preorder') {
+            row.stock = Math.max(0, (row.preorder_stock || 0) - (row.order_sold || 0));
+        } else {
+            row.stock = row.credential_stock;
+        }
+        results.push(row);
+    }
+    stmt.free();
+    return results;
 }
 
 function getProductById(id) {
@@ -610,6 +664,8 @@ module.exports = {
     addCategory,
     // Products
     getProducts,
+    getFeaturedProducts,
+    getProductsByCategory,
     getProductById,
     addProduct,
     updateProduct,
