@@ -892,6 +892,9 @@ Số Lượng Đang Hiện Có 10"
         <input type="number" id="pMaxPerUser" placeholder="0" min="0">
         <p class="hint">0 = không giới hạn. VD: 1 = mỗi user chỉ mua được 1 SP này.</p>
       </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="pIsFeatured"> ⭐ Sản phẩm nổi bật (hiện ở đầu danh sách)</label>
+      </div>
       <div id="credentialFieldsGroup" class="form-group">
         <label>Trường thông tin credential</label>
         <div id="fieldBuilder"></div>
@@ -1275,6 +1278,7 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('pPreorderStock').value = product ? (product.preorder_stock || 0) : '';
       document.getElementById('pSubscriptionDays').value = product ? (product.subscription_days || '') : '';
       document.getElementById('pMaxPerUser').value = product ? (product.max_per_user || '') : '';
+      document.getElementById('pIsFeatured').checked = product ? !!product.is_featured : false;
       toggleProductTypeFields();
 
       // Populate credential field builder
@@ -1360,6 +1364,7 @@ Số Lượng Đang Hiện Có 10"
         preorderStock: productType === 'preorder' ? (document.getElementById('pPreorderStock').value || 0) : undefined,
         subscriptionDays: document.getElementById('pSubscriptionDays').value || null,
         maxPerUser: parseInt(document.getElementById('pMaxPerUser').value) || 0,
+        isFeatured: document.getElementById('pIsFeatured').checked ? 1 : 0,
       };
       try {
         if (id) {
