@@ -1974,10 +1974,10 @@ Số Lượng Đang Hiện Có 10"
       }
       try {
         if (editId) {
-          await apiFetch(`/discounts/${editId}`, { method: 'PUT', body: JSON.stringify(data) });
+          await apiFetch(`/discounts/${editId}`, { method: 'PUT', body: data });
           toast('Đã cập nhật mã giảm giá!');
         } else {
-          await apiFetch('/discounts', { method: 'POST', body: JSON.stringify(data) });
+          await apiFetch('/discounts', { method: 'POST', body: data });
           toast('Đã tạo mã giảm giá!');
         }
         closeModal('discountModal');
@@ -1987,7 +1987,7 @@ Số Lượng Đang Hiện Có 10"
 
     async function toggleDiscount(id, newState) {
       try {
-        await apiFetch(`/discounts/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: newState }) });
+        await apiFetch(`/discounts/${id}`, { method: 'PUT', body: { is_active: newState } });
         toast(newState ? 'Đã bật mã giảm giá' : 'Đã tắt mã giảm giá');
         loadDiscounts();
       } catch (e) { toast(e.message, 'error'); }
