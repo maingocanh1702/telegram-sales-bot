@@ -475,10 +475,10 @@ function setupAdminAPI(app, bot) {
     app.put('/api/admin/discounts/:id', (req, res) => {
         try {
             const updates = {};
-            const allowed = ['code', 'type', 'value', 'product_id', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'starts_at', 'expires_at', 'is_active'];
+            const allowed = ['code', 'type', 'value', 'product_id', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'max_discount_qty', 'starts_at', 'expires_at', 'is_active'];
             for (const key of allowed) {
                 if (req.body[key] !== undefined) {
-                    if (['value', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user'].includes(key)) {
+                    if (['value', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'max_discount_qty'].includes(key)) {
                         updates[key] = req.body[key] !== null && req.body[key] !== '' ? parseInt(req.body[key]) : null;
                     } else if (key === 'is_active') {
                         updates[key] = req.body[key] ? 1 : 0;

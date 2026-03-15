@@ -176,6 +176,7 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN max_per_user INTEGER DEFAULT 0`,
         `ALTER TABLE orders ADD COLUMN discount_code TEXT`,
         `ALTER TABLE orders ADD COLUMN discount_amount INTEGER DEFAULT 0`,
+        `ALTER TABLE discount_codes ADD COLUMN max_discount_qty INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -763,8 +764,8 @@ function getBankConfig() {
 
 function createDiscountCode(data) {
     db.run(
-        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, starts_at, expires_at, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, starts_at, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.code.toUpperCase().trim(),
             data.type || 'percent',
@@ -774,6 +775,7 @@ function createDiscountCode(data) {
             data.max_discount_amount ? parseInt(data.max_discount_amount) : null,
             parseInt(data.max_uses) || 0,
             parseInt(data.max_uses_per_user) || 0,
+            parseInt(data.max_discount_qty) || 0,
             data.starts_at || null,
             data.expires_at || null,
             data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
@@ -854,7 +856,7 @@ function getDiscountCodeByCode(code) {
  * Validate a discount code for a specific user and order.
  * Returns { valid: true, discount } or { valid: false, reason: "..." }
  */
-function validateDiscountCode(code, userId, orderAmount, productId) {
+function validateDiscountCode(code, userId, orderAmount, productId, quantity, unitPrice) {
     const discount = getDiscountCodeByCode(code);
 
     if (!discount) {
@@ -903,15 +905,21 @@ function validateDiscountCode(code, userId, orderAmount, productId) {
     }
 
     // Calculate discount amount
+    // If max_discount_qty is set, only discount that many units
+    const discountQty = (discount.max_discount_qty && discount.max_discount_qty > 0 && quantity)
+        ? Math.min(discount.max_discount_qty, quantity)
+        : quantity || 1;
+    const discountableAmount = unitPrice ? (unitPrice * discountQty) : orderAmount;
+
     let discountAmount;
     if (discount.type === 'percent') {
-        discountAmount = Math.floor(orderAmount * discount.value / 100);
+        discountAmount = Math.floor(discountableAmount * discount.value / 100);
         if (discount.max_discount_amount && discountAmount > discount.max_discount_amount) {
             discountAmount = discount.max_discount_amount;
         }
     } else {
-        // fixed
-        discountAmount = Math.min(discount.value, orderAmount);
+        // fixed — apply per discounted unit
+        discountAmount = Math.min(discount.value * discountQty, orderAmount);
     }
 
     return { valid: true, discount, discountAmount };

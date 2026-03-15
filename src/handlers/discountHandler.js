@@ -72,7 +72,7 @@ function setupDiscountHandler(bot) {
         const product = db.getProductById(state.pending.productId);
         const orderAmount = product.price * state.pending.quantity;
 
-        const result = db.validateDiscountCode(code, userId, orderAmount, state.pending.productId);
+        const result = db.validateDiscountCode(code, userId, orderAmount, state.pending.productId, state.pending.quantity, product.price);
 
         if (!result.valid) {
             bot.sendMessage(msg.chat.id,
