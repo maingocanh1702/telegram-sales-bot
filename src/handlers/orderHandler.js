@@ -83,6 +83,20 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
             return;
         }
 
+        // Check max per user limit
+        if (product.max_per_user && product.max_per_user > 0) {
+            const purchased = db.getUserProductPurchaseCount(userId, productId);
+            const remaining = product.max_per_user - purchased;
+            if (remaining <= 0) {
+                bot.sendMessage(chatId, `❌ Bạn đã mua tối đa ${product.max_per_user} SP "${product.name}" rồi.`);
+                return;
+            }
+            if (quantity > remaining) {
+                bot.sendMessage(chatId, `❌ Bạn chỉ có thể mua thêm ${remaining} SP "${product.name}" nữa (giới hạn ${product.max_per_user}/người).`);
+                return;
+            }
+        }
+
         const originalAmount = product.price * quantity;
         const finalDiscountAmount = discountAmount || 0;
         const totalAmount = originalAmount - finalDiscountAmount;
