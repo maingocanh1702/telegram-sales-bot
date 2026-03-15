@@ -658,6 +658,7 @@ module.exports = {
     deleteDiscountCode,
     getDiscountUsageStats,
     getActiveDiscountCodes,
+    recalcDiscountUsage,
     // User purchase limit
     getUserProductPurchaseCount,
 };
@@ -937,6 +938,24 @@ function useDiscountCode(discountId, userId, orderCode) {
         [discountId, userId, orderCode]
     );
     saveDatabase();
+}
+
+/**
+ * Recalculate used_count for a discount code based on only paid/delivered orders
+ */
+function recalcDiscountUsage(discountId) {
+    // Delete usage records that don't have a paid/delivered order
+    db.run(`
+        DELETE FROM discount_usage 
+        WHERE discount_code_id = ? 
+        AND order_code NOT IN (SELECT order_code FROM orders WHERE status IN ('paid', 'delivered'))
+    `, [discountId]);
+    // Recalc used_count from actual usage records
+    const result = db.exec('SELECT COUNT(*) FROM discount_usage WHERE discount_code_id = ?', [discountId]);
+    const count = result.length > 0 ? result[0].values[0][0] : 0;
+    db.run('UPDATE discount_codes SET used_count = ? WHERE id = ?', [count, discountId]);
+    saveDatabase();
+    return count;
 }
 
 function updateDiscountCode(id, updates) {

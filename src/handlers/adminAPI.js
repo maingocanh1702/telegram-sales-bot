@@ -514,6 +514,16 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Recalculate discount usage (fix stale counts from bug)
+    app.post('/api/admin/discounts/:id/recalc', (req, res) => {
+        try {
+            const newCount = db.recalcDiscountUsage(parseInt(req.params.id));
+            res.json({ message: `Đã tính lại: ${newCount} lượt sử dụng thực tế`, used_count: newCount });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     console.log('🔧 Admin API ready at /api/admin/*');
 }
 

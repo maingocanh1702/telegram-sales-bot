@@ -74,6 +74,14 @@ function setupWebhookHandler(app, bot) {
             console.log(`✅ Payment confirmed: ${orderCode}`);
             db.updateOrderStatus(orderCode, 'paid');
 
+            // Record discount usage on successful payment
+            if (order.discount_code) {
+                const discountObj = db.getDiscountCodeByCode(order.discount_code);
+                if (discountObj) {
+                    db.useDiscountCode(discountObj.id, order.telegram_user_id, orderCode);
+                }
+            }
+
             // Notify user
             bot.sendMessage(order.telegram_user_id,
                 `✅ Đã xác nhận thanh toán cho đơn hàng #${orderCode}!\n\n` +
