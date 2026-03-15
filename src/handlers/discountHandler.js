@@ -18,7 +18,7 @@ const waitingForDiscount = new Map();
 function setupDiscountHandler(bot) {
     // /discount command — show available discount codes
     bot.onText(/\/discount/, (msg) => {
-        showAvailableDiscounts(bot, msg.chat.id);
+        showAvailableDiscounts(bot, msg.chat.id, msg.from.id);
     });
 
     // Listen for discount_prompt event
@@ -167,13 +167,48 @@ function isWaitingForDiscount(userId) {
 /**
  * Show available discount codes to user (/discount command)
  */
-function showAvailableDiscounts(bot, chatId) {
-    const codes = db.getActiveDiscountCodes();
+async function showAvailableDiscounts(bot, chatId, userId) {
+    const allCodes = db.getActiveDiscountCodes();
+
+    if (allCodes.length === 0) {
+        bot.sendMessage(chatId,
+            '🎟 **MÃ GIẢM GIÁ**\n\n' +
+            '😔 Hiện tại chưa có mã giảm giá nào.\n' +
+            'Hãy theo dõi để nhận ưu đãi nhé!',
+            { parse_mode: 'Markdown' }
+        );
+        return;
+    }
+
+    // Filter codes by user eligibility (group check) and resolve group names
+    const codes = [];
+    const groupNames = {};
+    for (const c of allCodes) {
+        if (c.required_group_id) {
+            // Check if user is in required group
+            try {
+                const member = await bot.getChatMember(c.required_group_id, userId);
+                if (!['member', 'administrator', 'creator'].includes(member.status)) continue;
+            } catch (e) {
+                continue; // User not in group or bot can't check
+            }
+            // Get group name if not cached
+            if (!groupNames[c.required_group_id]) {
+                try {
+                    const chat = await bot.getChat(c.required_group_id);
+                    groupNames[c.required_group_id] = chat.title || 'Nhóm riêng';
+                } catch (e) {
+                    groupNames[c.required_group_id] = 'Nhóm riêng';
+                }
+            }
+        }
+        codes.push(c);
+    }
 
     if (codes.length === 0) {
         bot.sendMessage(chatId,
             '🎟 **MÃ GIẢM GIÁ**\n\n' +
-            '😔 Hiện tại chưa có mã giảm giá nào.\n' +
+            '😔 Hiện tại chưa có mã giảm giá nào dành cho bạn.\n' +
             'Hãy theo dõi để nhận ưu đãi nhé!',
             { parse_mode: 'Markdown' }
         );
@@ -196,7 +231,7 @@ function showAvailableDiscounts(bot, chatId) {
     if (generalCodes.length > 0) {
         text += '🌐 **Áp dụng tất cả sản phẩm:**\n';
         for (const c of generalCodes) {
-            text += formatDiscountLine(c);
+            text += formatDiscountLine(c, groupNames);
         }
         text += '\n';
     }
@@ -204,7 +239,7 @@ function showAvailableDiscounts(bot, chatId) {
     for (const [productName, pCodes] of Object.entries(byProduct)) {
         text += `📦 **${productName}:**\n`;
         for (const c of pCodes) {
-            text += formatDiscountLine(c);
+            text += formatDiscountLine(c, groupNames);
         }
         text += '\n';
     }
@@ -235,7 +270,7 @@ function sendDiscountError(bot, chatId, reason) {
 /**
  * Format a single discount code line for display
  */
-function formatDiscountLine(discount) {
+function formatDiscountLine(discount, groupNames = {}) {
     const valueLabel = discount.type === 'percent'
         ? `giảm ${discount.value}%`
         : `giảm ${formatPrice(discount.value)}`;
@@ -256,6 +291,9 @@ function formatDiscountLine(discount) {
         const day = expDate.getDate().toString().padStart(2, '0');
         const month = (expDate.getMonth() + 1).toString().padStart(2, '0');
         line += ` | HSD: ${day}/${month}`;
+    }
+    if (discount.required_group_id && groupNames[discount.required_group_id]) {
+        line += `\n    🔒 _Dành cho nhóm: ${groupNames[discount.required_group_id]}_`;
     }
     line += '\n';
     return line;

@@ -42,14 +42,14 @@ function setupProductHandler(bot) {
             const productId = Number.parseInt(pagedProductMatch[1], 10);
             const page = Number.parseInt(pagedProductMatch[2], 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, page);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, page, query.from.id);
             return;
         }
 
         if (data.startsWith('product_')) {
             const productId = Number.parseInt(data.replace('product_', ''), 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, 1);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, 1, query.from.id);
             return;
         }
     });
@@ -138,7 +138,7 @@ function showProductList(bot, chatId, messageId = null, page = 1) {
 /**
  * Show detailed view of a single product
  */
-function showProductDetail(bot, chatId, messageId, productId, page = 1) {
+async function showProductDetail(bot, chatId, messageId, productId, page = 1, userId = null) {
     const product = db.getProductById(productId);
 
     if (!product) {
@@ -171,6 +171,14 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
         text += `⚠️ Lưu ý: ${product.note}\n`;
     }
 
+    // Auto-detect discounts for this product
+    if (userId) {
+        const hasDiscount = await checkProductDiscountForUser(bot, productId, userId);
+        if (hasDiscount) {
+            text += `\n🔥 **SP này đang có mã giảm giá!** Gõ /discount để xem\n`;
+        }
+    }
+
     text += `\n👇 Chọn hành động:`;
 
     const keyboard = [];
@@ -194,6 +202,30 @@ function showProductDetail(bot, chatId, messageId, productId, page = 1) {
             console.warn('[ProductDetail] editMessage failed:', err.message);
         }
     });
+}
+
+/**
+ * Check if a product has active discounts that the user qualifies for
+ */
+async function checkProductDiscountForUser(bot, productId, userId) {
+    const codes = db.getActiveDiscountCodes();
+    // Filter codes that apply to this product (or all products)
+    const applicable = codes.filter(c => !c.product_id || c.product_id === productId);
+    if (applicable.length === 0) return false;
+
+    for (const code of applicable) {
+        if (!code.required_group_id) return true; // No group required = qualifies
+        // Check group membership
+        try {
+            const member = await bot.getChatMember(code.required_group_id, userId);
+            if (['member', 'administrator', 'creator'].includes(member.status)) {
+                return true;
+            }
+        } catch (e) {
+            // User not in group or bot not in group — skip this code
+        }
+    }
+    return false;
 }
 
 module.exports = { setupProductHandler, showProductList };
