@@ -60,7 +60,7 @@ function setupDiscountHandler(bot) {
     });
 
     // Handle text input for discount code
-    bot.on('message', (msg) => {
+    bot.on('message', async (msg) => {
         const userId = msg.from.id;
         if (!waitingForDiscount.has(userId)) return;
 
@@ -76,22 +76,27 @@ function setupDiscountHandler(bot) {
         const result = db.validateDiscountCode(code, userId, orderAmount, state.pending.productId, state.pending.quantity, product.price);
 
         if (!result.valid) {
-            bot.sendMessage(msg.chat.id,
-                `❌ ${result.reason}\n\nNhập mã khác hoặc bấm "Bỏ qua":`,
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '⏭ Bỏ qua', callback_data: CALLBACKS.DISCOUNT_SKIP }],
-                        ],
-                    },
-                }
-            );
+            sendDiscountError(bot, msg.chat.id, result.reason);
             return;
         }
 
-        // Valid! Show preview
         const { discount, discountAmount } = result;
+
+        // Check group membership if required
+        if (discount.required_group_id) {
+            try {
+                const member = await bot.getChatMember(discount.required_group_id, userId);
+                if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                    sendDiscountError(bot, msg.chat.id, 'Mã này chỉ dành cho thành viên nhóm. Vui lòng tham gia nhóm trước.');
+                    return;
+                }
+            } catch (e) {
+                sendDiscountError(bot, msg.chat.id, 'Mã này chỉ dành cho thành viên nhóm. Vui lòng tham gia nhóm trước.');
+                return;
+            }
+        }
+
+        // Valid! Show preview
         const finalAmount = orderAmount - discountAmount;
         const discountLabel = discount.type === 'percent'
             ? `${discount.value}%`
@@ -204,9 +209,27 @@ function showAvailableDiscounts(bot, chatId) {
         text += '\n';
     }
 
-    text += '💡 _Nhập mã khi thanh toán để được giảm giá!_';
+    text += '💡 _Nhập mã khi thanh toán để được giảm giá!_\n';
+    text += '🛒 Dùng mã ngay: /product';
 
     bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+}
+
+/**
+ * Show discount error with retry button
+ */
+function sendDiscountError(bot, chatId, reason) {
+    bot.sendMessage(chatId,
+        `❌ ${reason}\n\nNhập mã khác hoặc bấm "Bỏ qua":`,
+        {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '⏭ Bỏ qua', callback_data: CALLBACKS.DISCOUNT_SKIP }],
+                ],
+            },
+        }
+    );
 }
 
 /**
