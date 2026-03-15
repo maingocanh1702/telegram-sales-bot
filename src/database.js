@@ -177,6 +177,7 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN discount_code TEXT`,
         `ALTER TABLE orders ADD COLUMN discount_amount INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN max_discount_qty INTEGER DEFAULT 0`,
+        `ALTER TABLE discount_codes ADD COLUMN required_group_id TEXT`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -765,8 +766,8 @@ function getBankConfig() {
 
 function createDiscountCode(data) {
     db.run(
-        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, starts_at, expires_at, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, starts_at, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.code.toUpperCase().trim(),
             data.type || 'percent',
@@ -777,6 +778,7 @@ function createDiscountCode(data) {
             parseInt(data.max_uses) || 0,
             parseInt(data.max_uses_per_user) || 0,
             parseInt(data.max_discount_qty) || 0,
+            data.required_group_id || null,
             data.starts_at || null,
             data.expires_at || null,
             data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
