@@ -1,13 +1,13 @@
 # CloudX Shop — Roadmap
 
-> **Phiên bản:** v1.0.0 | **Cập nhật:** 2026-03-16
+> **Phiên bản:** v1.1.0 | **Cập nhật:** 2026-03-16
 
 ---
 
 ## Overall Progress
 
 ```text
-██████████████████░░ 85% — Phase 1-3 Done, Phase 4 In Progress
+██████████████████░░ 90% — Phase 1-3.5 Done, Phase 4 In Progress
 ```
 
 | Phase | Trạng thái |
@@ -15,7 +15,8 @@
 | Phase 1: Core (v1.0-v1.3) | ✅ Complete |
 | Phase 2: Rebuild (v2.0) | ✅ Complete |
 | Phase 3: Enhancements (v2.1) | ✅ Complete |
-| Phase 4: Scale (v2.2) | 🚧 In Progress |
+| Phase 3.5: Link Checker Pro (v2.2) | ✅ Complete |
+| Phase 4: Scale (v2.3) | 🚧 In Progress |
 | Phase 5: Growth (v3.0) | 📋 Planned |
 
 ---
@@ -72,7 +73,24 @@
 
 ---
 
-## Phase 4: Scale & CTV (v2.2) 🚧
+## Phase 3.5: Link Checker Pro (v2.2) ✅
+
+> **Thời gian:** 2026-03-16
+
+| Feature | Status | Chi tiết |
+| ------- | ------ | -------- |
+| 2-step pre-check flow | ✅ Done | Quét DB + cache miễn phí trước khi tốn credits |
+| DB duplicate detection | ✅ Done | Nhận diện link trong kho, link đến SP, đã giao/chưa |
+| SQLite-persisted cache | ✅ Done | Cache tồn tại qua restart/deploy, table link_cache |
+| Smart TTL | ✅ Done | redeemed=∞, dead/expired=24h, live=15min, unknown=5min |
+| ScraperAPI tiered fix | ✅ Done | Claude URLs: render(10cr) → render+geo(20cr) |
+| Export CSV (batch) | ✅ Done | Xuất kết quả check hiện tại |
+| Export CSV (lịch sử) | ✅ Done | Tải toàn bộ cache history |
+| Smart UI edge cases | ✅ Done | 0 link mới, all-in-DB, confirmation dialog |
+
+---
+
+## Phase 4: Scale & CTV (v2.3) 🚧
 
 > **Thời gian:** 2026-03 → 2026-04
 
@@ -110,9 +128,10 @@
 | Phase 1 ✅ | DB schema, CRUD, webhook | Admin panel tabs | Menu, order flow |
 | Phase 2 ✅ | Config validation, rebuild | — | /profile, /help |
 | Phase 3 ✅ | Link checker, multi-discount, cache | Chip selector, link UI | Featured redesign |
+| Phase 3.5 ✅ | SQLite cache, pre-check API, export | Pre-check dialog, CSV export | — |
 | Phase 4 🚧 | CTV APIs, analytics | CTV tab, charts | CTV commands |
 | Phase 5 📋 | PostgreSQL, multi-admin | Notification center | i18n, referral |
 
 ---
 
-> **Cập nhật lần cuối:** 2026-03-16 v1.0.0
+> **Cập nhật lần cuối:** 2026-03-16 v1.1.0
