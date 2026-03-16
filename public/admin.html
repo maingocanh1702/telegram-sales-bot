@@ -1792,10 +1792,28 @@ Số Lượng Đang Hiện Có 10"
           const s = statusColors[status] || statusColors.unknown;
           html += `<span style="background:${s.bg};color:${s.text};padding:4px 10px;border-radius:6px;font-weight:500">${s.icon} ${s.label}: ${count}</span>`;
         }
-        if (res.cachedCount > 0) {
-          html += `<span style="background:rgba(168,85,247,0.12);color:#a855f7;padding:4px 10px;border-radius:6px;font-weight:500">💾 Cached: ${res.cachedCount}/${res.results.length}</span>`;
-        }
         html += `</div>`;
+
+        // Cached links detail banner
+        const cachedResults = res.results.filter(r => r.fromCache);
+        if (cachedResults.length > 0) {
+          window._cachedUrls = cachedResults.map(r => r.url);
+          html += `<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px">`;
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">`;
+          html += `<span style="color:#a855f7;font-weight:600">💾 ${cachedResults.length} link đã check ở batch trước (dùng kết quả cũ):</span>`;
+          html += `<button class="btn btn-sm" onclick="recheckCachedLinks()" style="background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid rgba(168,85,247,0.4);font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer">⚡ Re-check ${cachedResults.length} links</button>`;
+          html += `</div>`;
+          cachedResults.forEach(r => {
+            const cs = statusColors[r.status] || statusColors.unknown;
+            const short = r.url.length > 55 ? r.url.substring(0, 55) + '...' : r.url;
+            html += `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;color:var(--text-secondary)">`;
+            html += `<span>${cs.icon}</span>`;
+            html += `<code style="flex:1;word-break:break-all">${short}</code>`;
+            html += `<span style="color:${cs.text};white-space:nowrap">${r.detail}</span>`;
+            html += `</div>`;
+          });
+          html += `</div>`;
+        }
 
         // Detail per link
         for (let i = 0; i < res.results.length; i++) {
@@ -1820,17 +1838,50 @@ Số Lượng Đang Hiện Có 10"
 
         // Actions — fix: open tabs with delay to avoid popup blocker
         let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
-        if (res.cachedCount > 0) {
-          actionsHtml += ` <button class="btn btn-ghost" onclick="window._linkCheckForce=true;closeModal('dupReportModal');checkCredLinks()" style="color:#a855f7">⚡ Force re-check</button>`;
-        }
         if (hasCfBlocked) {
           actionsHtml += ` <button class="btn btn-primary" onclick="openAllLinksStaggered()">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
-          window._linkCheckUrls = [...new Set(urlsToCheck)]; // dedupe URLs for opening
+          window._linkCheckUrls = [...new Set(urlsToCheck)];
         }
         document.getElementById('dupReportActions').innerHTML = actionsHtml;
       } catch (e) {
         document.getElementById('dupReportBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
         document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+      }
+    }
+
+    async function recheckCachedLinks() {
+      const urls = window._cachedUrls || [];
+      if (urls.length === 0) return;
+      document.getElementById('dupReportTitle').textContent = '🔗 Đang re-check...';
+      document.getElementById('dupReportBody').innerHTML = `<p style="text-align:center;padding:20px">⚡ Đang re-check ${urls.length} link (bỏ qua cache)...</p>`;
+      try {
+        const res = await apiFetch('/credentials/check-links', {
+          method: 'POST',
+          body: { urls, forceRefresh: true },
+        });
+        // Update just the cached items inline
+        let html = `<div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#22c55e">
+          ✅ Đã re-check ${urls.length} link thành công (kết quả mới nhất)
+        </div>`;
+        const statusColors2 = {
+          live: { text: '#22c55e', icon: '✅' }, redeemed: { text: '#ef4444', icon: '🔴' },
+          expired: { text: '#f59e0b', icon: '⏰' }, dead: { text: '#6b7280', icon: '💀' },
+          unknown: { text: '#6b7280', icon: '❓' },
+        };
+        res.results.forEach(r => {
+          const cs = statusColors2[r.status] || statusColors2.unknown;
+          const short = r.url.length > 55 ? r.url.substring(0, 55) + '...' : r.url;
+          html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:3px;border-radius:6px;font-size:12px;background:var(--bg-hover)">`;
+          html += `<span style="font-size:16px">${cs.icon}</span>`;
+          html += `<code style="flex:1;word-break:break-all">${short}</code>`;
+          html += `<span style="color:${cs.text};font-weight:500">${r.detail}</span>`;
+          html += `</div>`;
+        });
+        document.getElementById('dupReportTitle').textContent = `⚡ Re-check ${urls.length} links`;
+        document.getElementById('dupReportBody').innerHTML = html;
+        document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+      } catch (e) {
+        document.getElementById('dupReportBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
       }
     }
 
