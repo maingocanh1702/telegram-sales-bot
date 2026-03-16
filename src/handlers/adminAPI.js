@@ -316,6 +316,65 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Search credentials by content (keyword in data)
+    app.get('/api/admin/credentials/search', (req, res) => {
+        try {
+            const q = (req.query.q || '').trim();
+            if (!q) {
+                return res.status(400).json({ error: true, message: 'Query parameter q is required', code: 'VALIDATION_ERROR' });
+            }
+
+            const d = db.getDb();
+            // Search in credential data (JSON string) using LIKE
+            const stmt = d.prepare(`
+                SELECT c.id AS cred_id, c.data, c.is_sold, c.order_id, c.product_id,
+                       o.order_code, o.status AS order_status, o.total_amount,
+                       o.telegram_username, o.customer_email, o.delivered_at, o.quantity,
+                       p.name AS product_name, p.credential_fields
+                FROM credentials c
+                LEFT JOIN orders o ON c.order_id = o.id
+                LEFT JOIN products p ON c.product_id = p.id
+                WHERE c.data LIKE ?
+                ORDER BY c.created_at DESC
+                LIMIT 20
+            `);
+            stmt.bind([`%${q}%`]);
+            const results = [];
+            while (stmt.step()) results.push(stmt.getAsObject());
+            stmt.free();
+
+            if (results.length === 0) {
+                return res.json({ results: [], message: 'Không tìm thấy credential nào' });
+            }
+
+            // Parse and format results
+            const formatted = results.map(r => {
+                let credData = {};
+                try { credData = JSON.parse(r.data || '{}'); } catch { credData = { value: r.data }; }
+                let credFields = [];
+                try { credFields = JSON.parse(r.credential_fields || '[]'); } catch { }
+
+                return {
+                    credential: { id: r.cred_id, data: credData, is_sold: r.is_sold },
+                    order: r.order_id ? {
+                        order_code: r.order_code,
+                        status: r.order_status,
+                        total_amount: r.total_amount,
+                        telegram_username: r.telegram_username,
+                        customer_email: r.customer_email,
+                        delivered_at: r.delivered_at,
+                        quantity: r.quantity,
+                    } : null,
+                    product: { name: r.product_name, credential_fields: credFields },
+                };
+            });
+
+            res.json({ results: formatted });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Customers ====================
 
     app.get('/api/admin/customers', (req, res) => {
