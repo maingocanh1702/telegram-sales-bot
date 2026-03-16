@@ -193,6 +193,7 @@ async function showAvailableDiscounts(bot, chatId, userId) {
                 const member = await bot.getChatMember(c.required_group_id, userId);
                 if (!['member', 'administrator', 'creator'].includes(member.status)) continue;
             } catch (e) {
+                console.warn(`[Discount] getChatMember failed for group ${c.required_group_id}, user ${userId}:`, e.message);
                 continue; // User not in group or bot can't check
             }
             // Get group name if not cached
