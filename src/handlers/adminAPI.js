@@ -420,15 +420,20 @@ function setupAdminAPI(app, bot) {
                 });
             }
 
-            // Phase 2: ScraperAPI for URLs not in DB and not excluded
+            // Phase 2: ScraperAPI for URLs not excluded
             const excluded = new Set(excludeUrls || []);
-            const urlsToFetch = newUrls.filter(u => !excluded.has(u));
 
-            // Also re-check cached URLs unless excluded
-            const cachedToRecheck = cached.filter(c => !excluded.has(c.url));
-            const cachedToKeep = cached.filter(c => excluded.has(c.url));
+            // DB dups: check via ScraperAPI unless excluded
+            const dbDupsToCheck = dbDups.filter(d => !excluded.has(d.url)).map(d => d.url);
+            const dbDupsToKeep = dbDups.filter(d => excluded.has(d.url));
 
-            const fetchUrls = [...urlsToFetch, ...cachedToRecheck.map(c => c.url)];
+            // New URLs: always check
+            const urlsToFetch = [...newUrls, ...dbDupsToCheck];
+
+            // Cached URLs: use cached results (already checked)
+            // (cached results are returned as-is from cache by checkLinks)
+
+            const fetchUrls = [...urlsToFetch, ...cached.map(c => c.url)];
             let validityResults = [];
             if (fetchUrls.length > 0) {
                 validityResults = await checkLinks(fetchUrls, 5, !!forceRefresh);
@@ -439,12 +444,10 @@ function setupAdminAPI(app, bot) {
 
             // Merge all results in original order
             const results = toCheck.map(url => {
-                const dbMatch = dbDups.find(d => d.url === url);
-                if (dbMatch) return dbMatch;
-                if (excluded.has(url)) {
-                    const kept = cachedToKeep.find(c => c.url === url);
-                    if (kept) return kept;
-                }
+                // If excluded DB dup — return DB info
+                const keptDbDup = dbDupsToKeep.find(d => d.url === url);
+                if (keptDbDup) return keptDbDup;
+                // Otherwise use validity result (ScraperAPI or cache)
                 return validityMap[url] || { url, status: 'unknown', detail: 'Chưa kiểm tra' };
             });
 
