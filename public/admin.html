@@ -949,6 +949,7 @@ Số Lượng Đang Hiện Có 10"
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('bulkModal')">Hủy</button>
+        <button class="btn" style="background:var(--bg-hover);color:var(--text-muted);font-size:12px" onclick="exportCacheHistory()" title="Tải lịch sử check link trước đây">📥 Lịch sử</button>
         <button class="btn" style="background:var(--bg-hover);color:var(--text-primary)" onclick="checkLinksInBulk()" title="Kiểm tra link credential còn sống không">🔗 Check Links</button>
         <button class="btn btn-primary" onclick="saveBulkCredentials()">Import</button>
       </div>
@@ -1974,6 +1975,45 @@ Số Lượng Đang Hiện Có 10"
       a.download = `link-check-${date}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+    }
+
+    async function exportCacheHistory() {
+      try {
+        const data = await apiFetch('/credentials/link-cache');
+        if (!data.entries || data.entries.length === 0) {
+          alert('Chưa có lịch sử check link nào.');
+          return;
+        }
+
+        const statusMap = {
+          live: 'Còn sống', redeemed: 'Đã redeem', expired: 'Hết hạn',
+          dead: 'Dead', cf_blocked: 'Cloudflare blocked', unknown: 'Không rõ',
+          in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)',
+          timeout: 'Timeout', error: 'Lỗi',
+        };
+
+        const BOM = '\uFEFF';
+        const header = ['STT', 'URL', 'Trạng thái', 'Chi tiết', 'Thời gian check'];
+        const rows = data.entries.map((r, i) => [
+          i + 1,
+          `"${r.url.replace(/"/g, '""')}"`,
+          statusMap[r.status] || r.status,
+          `"${(r.detail || '').replace(/"/g, '""')}"`,
+          new Date(r.checked_at).toLocaleString('vi-VN'),
+        ]);
+
+        const csv = BOM + [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const date = new Date().toISOString().slice(0, 10);
+        a.download = `link-history-${date}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
     }
 
     function openAllLinksStaggered() {
