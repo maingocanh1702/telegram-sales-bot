@@ -17,7 +17,7 @@ Admin quản lý sản phẩm (CRUD), danh mục, kho credentials, drag-drop reo
 ### UC-1: CRUD sản phẩm
 
 1. Admin tab "Sản phẩm" → table SP + stock (available/sold/total)
-2. "Thêm sản phẩm" → form: name, price, type, category, credential_fields, customer_fields, featured, max_per_user, subscription_days, delivery_hours
+2. "Thêm sản phẩm" → form: name, price, type, category, credential_fields, customer_fields, featured, max_per_user, subscription_days, warranty_days, delivery_hours
 3. Click SP → edit inline hoặc modal (partial update)
 4. Xóa: has orders → soft (is_active=0), no orders → hard delete + credentials
 
@@ -94,6 +94,7 @@ Admin quản lý sản phẩm (CRUD), danh mục, kho credentials, drag-drop reo
 | customer_fields | Not used | Email form | Email form |
 | credential_fields | Defines data schema | Not used | Not used |
 | subscription_days | Optional | Optional | Optional |
+| warranty_days | Optional | Optional | Optional |
 | max_per_user | Optional | Optional | Optional |
 
 ---
@@ -111,3 +112,4 @@ Admin quản lý sản phẩm (CRUD), danh mục, kho credentials, drag-drop reo
 - [x] Featured toggle
 - [x] max_per_user limit
 - [x] subscription_days auto-expiry
+- [x] warranty_days tracking
