@@ -388,6 +388,14 @@ function setupAdminAPI(app, bot) {
             // Phase 1b: Cache check (free, instant)
             const { getCachedResult } = require('../utils/linkChecker');
 
+            // Build product name map
+            const productMap = {};
+            try {
+                const pStmt = d.prepare('SELECT id, name FROM products');
+                while (pStmt.step()) { const p = pStmt.getAsObject(); productMap[p.id] = p.name; }
+                pStmt.free();
+            } catch {}
+
             const dbDups = [];
             const cached = [];
             const newUrls = [];
@@ -395,9 +403,15 @@ function setupAdminAPI(app, bot) {
                 const dbMatch = dbUrlMap[url];
                 if (dbMatch && dbMatch.length > 0) {
                     const sold = dbMatch.some(m => m.isSold);
+                    const products = dbMatch.map(m => ({
+                        productId: m.productId,
+                        productName: productMap[m.productId] || `SP #${m.productId}`,
+                        isSold: m.isSold,
+                    }));
                     dbDups.push({
                         url, status: sold ? 'in_db_sold' : 'in_db_available',
                         detail: sold ? 'Đã có trong kho (đã giao)' : 'Đã có trong kho (chưa giao)',
+                        products,
                     });
                 } else {
                     const cachedResult = getCachedResult(url);
