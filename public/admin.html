@@ -948,6 +948,7 @@ Số Lượng Đang Hiện Có 10"
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('bulkModal')">Hủy</button>
+        <button class="btn" style="background:var(--bg-hover);color:var(--text-primary)" onclick="checkLinksInBulk()" title="Kiểm tra link credential còn sống không">🔗 Check Links</button>
         <button class="btn btn-primary" onclick="saveBulkCredentials()">Import</button>
       </div>
     </div>
@@ -1518,16 +1519,43 @@ Số Lượng Đang Hiện Có 10"
       const lines = raw.split('\n').filter(l => l.trim());
 
       const credentials = lines.map(line => {
-        const parts = line.split(':');
         const data = {};
-        fields.forEach((f, i) => { data[f.key] = (parts[i] || '').trim(); });
+        if (fields.length === 1) {
+          // Single field: use entire line as value (preserves URLs)
+          data[fields[0].key] = line.trim();
+        } else {
+          // Multi-field: smart split that preserves :// in URLs
+          const parts = smartSplitCredLine(line, fields.length);
+          fields.forEach((f, i) => { data[f.key] = (parts[i] || '').trim(); });
+        }
         return data;
       });
 
       if (credentials.length === 0) { toast('Không tìm thấy credentials hợp lệ', 'error'); return; }
 
+      // ---- Step 1: Check internal duplicates (within the batch) ----
+      const internalDups = findInternalDuplicates(credentials);
+      if (internalDups.length > 0) {
+        let html = `<div style="background:rgba(239,168,56,0.15);border:1px solid rgba(239,168,56,0.4);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">`;
+        html += `<strong>⚠️ Phát hiện ${internalDups.length} cặp trùng nhau trong batch</strong>`;
+        html += `<br><span style="color:var(--text-muted)">Các credential này trùng nhau ngay trong danh sách bạn vừa nhập</span></div>`;
+
+        for (const dup of internalDups) {
+          const summary = Object.values(dup.data).join(':');
+          html += `<div style="background:var(--bg-main);border-radius:8px;padding:10px;margin-bottom:6px;border:1px solid var(--border);font-size:13px">`;
+          html += `Dòng <strong>${dup.lines.map(l => l + 1).join(', ')}</strong>: <code style="word-break:break-all">${summary}</code>`;
+          html += `</div>`;
+        }
+
+        document.getElementById('dupReportTitle').textContent = '⚠️ Trùng nhau trong batch';
+        document.getElementById('dupReportBody').innerHTML = html;
+        document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Quay lại sửa</button>`;
+        document.getElementById('dupReportModal').classList.add('active');
+        return;
+      }
+
       try {
-        // Check for duplicates first
+        // ---- Step 2: Check against existing DB credentials ----
         const checkRes = await apiFetch('/credentials/check-duplicates', {
           method: 'POST',
           body: { credentials },
@@ -1627,6 +1655,124 @@ Số Lượng Đang Hiện Có 10"
         loadCredentials();
       } catch (e) { toast(e.message, 'error'); }
       window._pendingImport = null;
+    }
+
+    // Smart split credential line: split by ':' but preserve '://' in URLs
+    function smartSplitCredLine(line, expectedParts) {
+      // Replace :// with placeholder, split, then restore
+      const placeholder = '{{PROTO}}';
+      const safe = line.replace(/:\/\//g, placeholder);
+      const parts = safe.split(':');
+      return parts.map(p => p.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), '://'));
+    }
+
+    // Find duplicates within a batch of credentials
+    function findInternalDuplicates(credentials) {
+      const seen = {};
+      for (let i = 0; i < credentials.length; i++) {
+        const key = JSON.stringify(credentials[i]);
+        if (!seen[key]) seen[key] = { data: credentials[i], lines: [] };
+        seen[key].lines.push(i);
+      }
+      return Object.values(seen).filter(g => g.lines.length > 1);
+    }
+
+    // Check if credential URLs are still alive
+    async function checkLinksInBulk() {
+      const productId = document.getElementById('bulkProductId').value;
+      const fields = getProductFields(productId);
+      const raw = document.getElementById('bulkData').value.trim();
+      if (!raw) { toast('Nhập credentials trước khi check link', 'error'); return; }
+
+      const lines = raw.split('\n').filter(l => l.trim());
+      const credentials = lines.map(line => {
+        const data = {};
+        if (fields.length === 1) {
+          data[fields[0].key] = line.trim();
+        } else {
+          const parts = smartSplitCredLine(line, fields.length);
+          fields.forEach((f, i) => { data[f.key] = (parts[i] || '').trim(); });
+        }
+        return data;
+      });
+
+      // Extract all URL values from credentials
+      const urlPattern = /^https?:\/\/.+/i;
+      const urlsToCheck = [];
+      const urlIndexMap = []; // track which credential+field each URL belongs to
+
+      credentials.forEach((cred, idx) => {
+        for (const [key, val] of Object.entries(cred)) {
+          const strVal = String(val || '').trim();
+          if (urlPattern.test(strVal)) {
+            urlsToCheck.push(strVal);
+            urlIndexMap.push({ index: idx, key, line: idx + 1 });
+          }
+        }
+      });
+
+      if (urlsToCheck.length === 0) {
+        toast('Không tìm thấy URL nào trong credentials', 'error');
+        return;
+      }
+
+      // Show loading
+      document.getElementById('dupReportTitle').textContent = '🔗 Đang kiểm tra links...';
+      document.getElementById('dupReportBody').innerHTML = `<p style="text-align:center;padding:20px">⏳ Đang check ${urlsToCheck.length} link... Vui lòng chờ</p>`;
+      document.getElementById('dupReportActions').innerHTML = '';
+      document.getElementById('dupReportModal').classList.add('active');
+
+      try {
+        const res = await apiFetch('/credentials/check-links', {
+          method: 'POST',
+          body: { urls: urlsToCheck },
+        });
+
+        const statusColors = {
+          live: { bg: 'rgba(34,197,94,0.15)', border: 'rgba(34,197,94,0.4)', text: '#22c55e', icon: '✅', label: 'Còn sống' },
+          redeemed: { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', icon: '🔴', label: 'Đã redeem' },
+          expired: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', text: '#f59e0b', icon: '⏰', label: 'Hết hạn' },
+          dead: { bg: 'rgba(107,114,128,0.15)', border: 'rgba(107,114,128,0.4)', text: '#6b7280', icon: '💀', label: 'Dead (404)' },
+          blocked: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', text: '#f59e0b', icon: '🚫', label: 'Bị chặn' },
+          redirected: { bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.4)', text: '#3b82f6', icon: '↪️', label: 'Redirect' },
+          timeout: { bg: 'rgba(107,114,128,0.15)', border: 'rgba(107,114,128,0.4)', text: '#6b7280', icon: '⏱️', label: 'Timeout' },
+          error: { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', icon: '❌', label: 'Lỗi' },
+          unknown: { bg: 'rgba(107,114,128,0.15)', border: 'rgba(107,114,128,0.4)', text: '#6b7280', icon: '❓', label: 'Không rõ' },
+        };
+
+        // Summary counts
+        const counts = {};
+        res.results.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+
+        let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:13px">`;
+        for (const [status, count] of Object.entries(counts)) {
+          const s = statusColors[status] || statusColors.unknown;
+          html += `<span style="background:${s.bg};color:${s.text};padding:4px 10px;border-radius:6px;font-weight:500">${s.icon} ${s.label}: ${count}</span>`;
+        }
+        html += `</div>`;
+
+        // Detail per link
+        for (let i = 0; i < res.results.length; i++) {
+          const r = res.results[i];
+          const s = statusColors[r.status] || statusColors.unknown;
+          const meta = urlIndexMap[i];
+          const shortUrl = r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url;
+
+          html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border-radius:6px;background:${s.bg};border:1px solid ${s.border};font-size:12px">`;
+          html += `<span style="min-width:40px;font-weight:600;color:var(--text-muted)">#${meta.line}</span>`;
+          html += `<span style="font-size:16px">${s.icon}</span>`;
+          html += `<span style="flex:1;word-break:break-all"><code>${shortUrl}</code></span>`;
+          html += `<span style="color:${s.text};white-space:nowrap;font-weight:500">${r.detail}</span>`;
+          html += `</div>`;
+        }
+
+        document.getElementById('dupReportTitle').textContent = `🔗 Kết quả kiểm tra ${urlsToCheck.length} links`;
+        document.getElementById('dupReportBody').innerHTML = html;
+        document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+      } catch (e) {
+        document.getElementById('dupReportBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
+        document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+      }
     }
 
     function editCred(id, dataB64) {
