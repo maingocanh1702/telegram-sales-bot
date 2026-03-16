@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.2.0 - 2026-03-16
+
+### Added
+
+- **2-step pre-check flow** cho link checker: quét DB + cache miễn phí → xác nhận → check validity
+- **DB duplicate detection**: nhận diện link đã có trong kho (sản phẩm nào, đã giao/chưa, link trực tiếp)
+- **SQLite-persisted cache**: table `link_cache` — cache tồn tại qua restart/deploy
+- **Smart TTL**: redeemed=∞, dead/expired=24h, live=15min, unknown=5min
+- **Export CSV** kết quả check (batch hiện tại + toàn bộ lịch sử cache)
+- API `GET /api/admin/credentials/link-cache` — export lịch sử check
+- Smart UI: ẩn nút "Bỏ qua" khi 0 link mới, thông báo khi tất cả đã có trong kho
+
+### Fixed
+
+- ScraperAPI: Claude URLs giờ thử render(10cr) → render+geo(20cr) thay vì chỉ 1 tier
+- Trả kết quả analyze cuối cùng thay vì generic "cf_blocked" khi tất cả tiers non-definitive
+- Status detection: fix bug không detect được redeemed/live với tiered approach mới
+
+## v2.1.0 - 2026-03-10
+
+### Added
+
+- Multi-product discount codes (1 mã → nhiều SP, chip selector UI)
+- Credential link checker (multi-strategy + ScraperAPI tiered)
+- Product reordering (drag & drop)
+- Featured products redesign
+- Max per user limit (max_per_user)
+
 ## v2.0.0 - 2026-03-04
 
 ### Changed

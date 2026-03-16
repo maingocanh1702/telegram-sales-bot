@@ -1,6 +1,6 @@
 # CloudX Shop — Product Requirements Document (PRD)
 
-> **Phiên bản:** v2.1.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
+> **Phiên bản:** v2.2.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
 
 ---
 
@@ -169,27 +169,53 @@ validateDiscountCode() → check active, dates, uses, product/products, user, mi
 | Subscription sắp hết | Customer | Telegram |
 | Đơn hết hạn | Customer | Telegram |
 
-### F-10: Credential Link Checker _(v2.1)_
+### F-10: Credential Link Checker _(v2.1 → v2.2)_
 
-**Mô tả:** Kiểm tra trạng thái link credential hàng loạt.
+**Mô tả:** Kiểm tra trạng thái link credential hàng loạt với 2-step flow tiết kiệm chi phí.
 
 | Thuộc tính | Chi tiết |
 | ---------- | -------- |
-| Batch size | Tối đa 30 URLs/request |
+| Batch size | Tối đa 100 URLs/request |
 | Strategies | Direct API → redirect analysis → content analysis → ScraperAPI |
-| ScraperAPI tiers | basic (1 credit) → render (10) → render+geo (20) |
+| ScraperAPI tiers | render (10cr) → render+geo (20cr). Known SPA (Claude) skip basic tier. |
 | Statuses | `live`, `redeemed`, `expired`, `dead`, `cf_blocked`, `unknown` |
-| Cache | Smart TTL: redeemed=∞, dead/expired=24h, live=15min |
-| UI | Summary badges, per-link detail, 💾 cache indicator, ⚡ force re-check |
+| Cache | **SQLite-persisted** — TTL: redeemed=∞, dead/expired=24h, live=15min, unknown=5min |
+| Pre-check | Quét DB + cache trước (miễn phí) → dialog xác nhận → check validity |
+| DB duplicate detection | Nhận diện link đã có trong kho: sản phẩm nào, đã giao/chưa, link đến SP |
+| Export | CSV: batch hiện tại + toàn bộ lịch sử cache (UTF-8 BOM cho tiếng Việt) |
+| UI | Summary badges, per-link detail, 💾 cache indicator, product links for DB dups |
+
+**2-step pre-check flow:**
+
+```text
+Step 1: Pre-check (instant, free)
+  ├─ Quét DB → tìm link trùng trong kho (SP nào, đã giao?)
+  ├─ Quét SQLite cache → tìm link đã check (status + time ago)
+  └─ Còn lại → link mới
+
+Dialog xác nhận:
+  ├─ N link trong kho (clickable → SP chi tiết)
+  ├─ M link đã cached (status + timestamp)
+  └─ P link mới → [Bỏ qua kho, check P mới] | [Check luôn tất cả]
+
+Step 2: Check validity (ScraperAPI, tốn credits)
+  └─ Chỉ check link được user chọn
+```
 
 **ScraperAPI tiered approach:**
 
 ```text
-Tier 1: Basic proxy (1 credit) → works for API/redirect-based checks
-  ↓ if CF blocked
-Tier 2: JS rendering (10 credits) → renders full page
-  ↓ if still CF blocked
-Tier 3: JS rendering + US geo (20 credits) → last resort
+Claude/SPA URLs:
+  Tier 1: JS rendering (10 credits) → analyze content
+    ↓ if non-definitive
+  Tier 2: JS rendering + US geo (20 credits) → last resort
+
+Generic URLs:
+  Tier 1: Basic proxy (1 credit)
+    ↓ if CF blocked
+  Tier 2: JS rendering (10 credits)
+    ↓ if still CF blocked
+  Tier 3: JS rendering + US geo (20 credits)
 ```
 
 ---
@@ -251,4 +277,5 @@ public/
 | v1.3 | Multi-bank, resend credentials, group discounts | ✅ Done |
 | v2.0 | Rebuild codebase, /profile, /help, /huongdan, config validation | ✅ Done |
 | v2.1 | Multi-product discounts, credential link checker, ScraperAPI, cache | ✅ Done |
-| v2.2 | CTV management, analytics dashboard | 🚧 In progress |
+| v2.2 | Pre-check flow, SQLite cache, DB dup detection, export CSV, cache history | ✅ Done |
+| v2.3 | CTV management, analytics dashboard | 🚧 In progress |

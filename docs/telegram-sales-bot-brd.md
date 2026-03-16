@@ -1,6 +1,6 @@
 # CloudX Shop — Business Requirements Document (BRD)
 
-> **Phiên bản:** v2.1.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
+> **Phiên bản:** v2.2.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
 
 ---
 
@@ -68,11 +68,14 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 - UI dạng chip/pill tag để chọn SP
 
 #### 🔗 Credential Link Checker
-- Kiểm tra trạng thái link credential hàng loạt (batch ≤30 URLs)
+- Kiểm tra trạng thái link credential hàng loạt (batch ≤100 URLs)
+- **2-step pre-check flow**: quét DB + cache trước → xác nhận trước khi tốn credits
 - Multi-strategy: Direct API, redirect analysis, content analysis
-- **ScraperAPI integration** cho Cloudflare bypass (tiered: basic → render → render+geo)
-- Tiết kiệm credits với 3-tier approach (1 → 10 → 20 credits/request)
+- **ScraperAPI integration** cho Cloudflare bypass (tiered: render → render+geo)
 - Phát hiện: live, redeemed, expired, dead, cf_blocked
+- **DB duplicate detection**: nhận diện link đã có trong kho (sản phẩm nào, đã giao/chưa)
+- **SQLite-persisted cache**: kết quả check tồn tại qua restart/redeploy
+- **Export CSV**: xuất kết quả batch hiện tại hoặc toàn bộ lịch sử check
 
 #### 🖥 Admin Panel (Web)
 - Dashboard: thống kê doanh thu, đơn hàng, khách hàng
@@ -81,7 +84,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 - Quản lý khách hàng: lịch sử mua, thống kê
 - Quản lý mã giảm giá (multi-product chip selector)
 - Quản lý tài khoản ngân hàng (multi-bank, 1 active)
-- Credential link checker UI
+- Credential link checker UI + pre-check confirmation + export
 - Cài đặt hệ thống
 
 ### 2.2 Ngoài phạm vi (Out-of-scope)
@@ -119,7 +122,8 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | Giao thủ công | Mark-delivered cho invite/preorder |
 | Gửi lại credential | Resend khi khách không nhận được |
 | Quản lý giảm giá | CRUD mã giảm giá với multi-product cho phép |
-| Check link | Kiểm tra hàng loạt trạng thái credential links |
+| Check link | Pre-check DB/cache → xác nhận → kiểm tra validity |
+| Export kết quả | Xuất CSV kết quả check (batch hoặc lịch sử) |
 | Sắp xếp SP | Drag & drop thứ tự hiển thị sản phẩm |
 
 ### 3.3 Quy tắc nghiệp vụ
@@ -136,7 +140,10 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | BR-08 | Bank active rule | Chỉ 1 tài khoản ngân hàng active tại 1 thời điểm |
 | BR-09 | Max per user | Giới hạn số lượng mua mỗi SP/user (0 = không giới hạn) |
 | BR-10 | Multi-product discount | 1 mã giảm giá áp dụng cho nhiều SP (product_ids JSON array) |
-| BR-11 | ScraperAPI tiered | Check link dùng 3 tier tiết kiệm credits: basic(1) → render(10) → geo(20) |
+| BR-11 | ScraperAPI tiered | Check link dùng 2 tier: render(10) → render+geo(20) |
+| BR-12 | Pre-check free | Quét DB + cache miễn phí trước khi dùng ScraperAPI |
+| BR-13 | Cache TTL | redeemed=∞, dead/expired=24h, live=15min, unknown=5min |
+| BR-14 | Cache persistence | Kết quả check lưu SQLite, tồn tại qua restart/deploy |
 
 ---
 
