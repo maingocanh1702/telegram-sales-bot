@@ -184,6 +184,9 @@ async function showAvailableDiscounts(bot, chatId, userId) {
     const codes = [];
     const groupNames = {};
     for (const c of allCodes) {
+        // Skip codes restricted to a different user
+        if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) continue;
+
         if (c.required_group_id) {
             // Check if user is in required group
             try {
@@ -294,6 +297,9 @@ function formatDiscountLine(discount, groupNames = {}) {
     }
     if (discount.required_group_id && groupNames[discount.required_group_id]) {
         line += `\n    🔒 _Dành cho nhóm: ${groupNames[discount.required_group_id]}_`;
+    }
+    if (discount.allowed_user_id) {
+        line += `\n    👤 _Dành riêng cho bạn_`;
     }
     line += '\n';
     return line;
