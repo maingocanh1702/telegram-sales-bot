@@ -188,18 +188,25 @@ async function showAvailableDiscounts(bot, chatId, userId) {
         if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) continue;
 
         if (c.required_group_id) {
+            const groupId = Number(c.required_group_id);
             // Check if user is in required group
             try {
-                const member = await bot.getChatMember(c.required_group_id, userId);
-                if (!['member', 'administrator', 'creator'].includes(member.status)) continue;
+                console.log(`[Discount] Checking group membership: code=${c.code}, groupId=${groupId}, userId=${userId}`);
+                const member = await bot.getChatMember(groupId, userId);
+                console.log(`[Discount] getChatMember result: status=${member.status}, user=${member.user?.first_name}`);
+                if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                    console.log(`[Discount] User ${userId} NOT eligible in group ${groupId} (status: ${member.status})`);
+                    continue;
+                }
+                console.log(`[Discount] User ${userId} IS eligible in group ${groupId}`);
             } catch (e) {
-                console.warn(`[Discount] getChatMember failed for group ${c.required_group_id}, user ${userId}:`, e.message);
+                console.warn(`[Discount] getChatMember FAILED for group ${groupId}, user ${userId}:`, e.message);
                 continue; // User not in group or bot can't check
             }
             // Get group name if not cached
             if (!groupNames[c.required_group_id]) {
                 try {
-                    const chat = await bot.getChat(c.required_group_id);
+                    const chat = await bot.getChat(groupId);
                     groupNames[c.required_group_id] = chat.title || 'Nhóm riêng';
                 } catch (e) {
                     groupNames[c.required_group_id] = 'Nhóm riêng';
