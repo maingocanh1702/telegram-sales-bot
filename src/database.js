@@ -522,6 +522,23 @@ function getPendingOrderByCode(orderCode) {
     return result;
 }
 
+/**
+ * Get all pending orders (for SePay poller reconciliation)
+ */
+function getPendingOrders() {
+    const stmt = db.prepare(`
+      SELECT o.*, p.name as product_name, p.product_type
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      WHERE o.status = 'pending'
+      ORDER BY o.created_at ASC
+    `);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
 function getUserOrders(telegramUserId, limit = 10) {
     const stmt = db.prepare('SELECT * FROM orders WHERE telegram_user_id = ? ORDER BY created_at DESC LIMIT ?');
     stmt.bind([telegramUserId, limit]);
@@ -789,6 +806,7 @@ module.exports = {
     createOrder,
     getOrderByCode,
     getPendingOrderByCode,
+    getPendingOrders,
     getUserOrders,
     getUserStats,
     isNewUser,
