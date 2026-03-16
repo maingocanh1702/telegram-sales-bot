@@ -533,4 +533,4 @@ async function checkLinks(urls, concurrency = 5, forceRefresh = false) {
     return results;
 }
 
-module.exports = { checkLink, checkLinks, extractClaudeCode, getCacheStats };
+module.exports = { checkLink, checkLinks, extractClaudeCode, getCacheStats, getCachedResult };

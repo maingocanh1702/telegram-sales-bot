@@ -353,15 +353,16 @@ function setupAdminAPI(app, bot) {
         }
     });
 
-    // Check credential links: Phase 1 = DB duplicate check (free), Phase 2 = validity check (ScraperAPI)
+    // Check credential links: Phase 1 = DB + cache pre-check, Phase 2 = ScraperAPI validity
     app.post('/api/admin/credentials/check-links', async (req, res) => {
         try {
-            const { urls, forceRefresh, skipValidity } = req.body;
+            const { urls, forceRefresh, preCheckOnly, excludeUrls } = req.body;
             if (!urls || !Array.isArray(urls) || urls.length === 0) {
                 return res.status(400).json({ error: true, message: 'urls array required', code: 'VALIDATION_ERROR' });
             }
 
-            const toCheck = urls.slice(0, 30);
+            const toCheck = urls.slice(0, 100);
+            const { checkLinks, getCacheStats } = require('../utils/linkChecker');
 
             // Phase 1: DB duplicate check (free, instant)
             const d = db.getDb();
@@ -370,7 +371,6 @@ function setupAdminAPI(app, bot) {
             while (stmt.step()) allCreds.push(stmt.getAsObject());
             stmt.free();
 
-            // Build a lookup: URL → credential info
             const dbUrlMap = {};
             allCreds.forEach(c => {
                 try {
@@ -385,51 +385,75 @@ function setupAdminAPI(app, bot) {
                 } catch {}
             });
 
-            // Mark each URL as duplicate or not
-            const urlsForValidity = [];
-            const dbResults = [];
+            // Phase 1b: Cache check (free, instant)
+            const { getCachedResult } = require('../utils/linkChecker');
+
+            const dbDups = [];
+            const cached = [];
+            const newUrls = [];
             toCheck.forEach(url => {
-                const matches = dbUrlMap[url];
-                if (matches && matches.length > 0) {
-                    const sold = matches.some(m => m.isSold);
-                    dbResults.push({
-                        url, inDb: true,
-                        status: sold ? 'in_db_sold' : 'in_db_available',
+                const dbMatch = dbUrlMap[url];
+                if (dbMatch && dbMatch.length > 0) {
+                    const sold = dbMatch.some(m => m.isSold);
+                    dbDups.push({
+                        url, status: sold ? 'in_db_sold' : 'in_db_available',
                         detail: sold ? 'Đã có trong kho (đã giao)' : 'Đã có trong kho (chưa giao)',
-                        dbMatches: matches,
                     });
                 } else {
-                    dbResults.push({ url, inDb: false });
-                    urlsForValidity.push(url);
+                    const cachedResult = getCachedResult(url);
+                    if (cachedResult) {
+                        cached.push(cachedResult);
+                    } else {
+                        newUrls.push(url);
+                    }
                 }
             });
 
-            // Phase 2: Validity check only for non-duplicate URLs
-            let validityResults = [];
-            if (!skipValidity && urlsForValidity.length > 0) {
-                const { checkLinks, getCacheStats } = require('../utils/linkChecker');
-                validityResults = await checkLinks(urlsForValidity, 5, !!forceRefresh);
+            // Pre-check only mode — return summary without ScraperAPI
+            if (preCheckOnly) {
+                return res.json({
+                    preCheck: true,
+                    dbDups,
+                    cached,
+                    newUrls,
+                    total: toCheck.length,
+                });
             }
 
-            // Merge results: DB results + validity results
+            // Phase 2: ScraperAPI for URLs not in DB and not excluded
+            const excluded = new Set(excludeUrls || []);
+            const urlsToFetch = newUrls.filter(u => !excluded.has(u));
+
+            // Also re-check cached URLs unless excluded
+            const cachedToRecheck = cached.filter(c => !excluded.has(c.url));
+            const cachedToKeep = cached.filter(c => excluded.has(c.url));
+
+            const fetchUrls = [...urlsToFetch, ...cachedToRecheck.map(c => c.url)];
+            let validityResults = [];
+            if (fetchUrls.length > 0) {
+                validityResults = await checkLinks(fetchUrls, 5, !!forceRefresh);
+            }
+
             const validityMap = {};
             validityResults.forEach(r => { validityMap[r.url] = r; });
 
+            // Merge all results in original order
             const results = toCheck.map(url => {
-                const dbResult = dbResults.find(d => d.url === url);
-                if (dbResult && dbResult.inDb) {
-                    return dbResult; // Already in DB, no ScraperAPI needed
+                const dbMatch = dbDups.find(d => d.url === url);
+                if (dbMatch) return dbMatch;
+                if (excluded.has(url)) {
+                    const kept = cachedToKeep.find(c => c.url === url);
+                    if (kept) return kept;
                 }
                 return validityMap[url] || { url, status: 'unknown', detail: 'Chưa kiểm tra' };
             });
 
-            const cachedCount = validityResults.filter(r => r.fromCache).length;
-            const dupCount = dbResults.filter(d => d.inDb).length;
-            const { getCacheStats } = require('../utils/linkChecker');
+            const dupCount = dbDups.length;
+            const cachedCount = results.filter(r => r.fromCache).length;
             res.json({
                 results,
                 dupCount,
-                checkedCount: urlsForValidity.length,
+                checkedCount: fetchUrls.length,
                 cachedCount,
                 cacheStats: getCacheStats(),
                 creditsSaved: dupCount > 0 ? `~${dupCount * 20} credits tiết kiệm nhờ check DB` : null,
