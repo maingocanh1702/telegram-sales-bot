@@ -1910,10 +1910,17 @@ Số Lượng Đang Hiện Có 10"
             return '<br><span style="font-weight:600;color:' + color + '">⏰ ' + label + '</span>';
           })()}</td>`;
         if (showActions) {
-          html += '<td>';
+          html += '<td style="white-space:nowrap">';
           if (o.status === 'pending') {
-            html += `<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.order_code}')">✅</button> `;
-            html += `<button class="btn btn-sm btn-danger" onclick="cancelOrder('${o.order_code}')">❌</button>`;
+            html += `<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.order_code}')" title="Xác nhận thanh toán">✅</button> `;
+            html += `<button class="btn btn-sm btn-danger" onclick="cancelOrder('${o.order_code}')" title="Hủy đơn">❌</button>`;
+          }
+          if (o.status === 'paid') {
+            if (o.product_type === 'invite') {
+              html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã gửi invite">📧 Đã invite</button>`;
+            } else if (o.product_type === 'preorder') {
+              html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã giao">📦 Đã giao</button>`;
+            }
           }
           if (o.status === 'delivered') {
             html += `<button class="btn btn-sm" onclick="viewOrderCredentials('${o.order_code}')" title="Xem tài khoản đã giao" style="background:var(--bg-card);border:1px solid var(--border);margin-right:4px">🔑</button>`;
@@ -2235,6 +2242,15 @@ Số Lượng Đang Hiện Có 10"
       try {
         await apiFetch(`/orders/${code}/cancel`, { method: 'POST' });
         toast('Đã hủy đơn');
+        loadOrders();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function markDelivered(code) {
+      if (!confirm(`Xác nhận đã giao/invite cho đơn ${code}? Khách sẽ nhận thông báo.`)) return;
+      try {
+        await apiFetch(`/orders/${code}/mark-delivered`, { method: 'POST' });
+        toast('✅ Đã đánh dấu giao hàng thành công!');
         loadOrders();
       } catch (e) { toast(e.message, 'error'); }
     }
