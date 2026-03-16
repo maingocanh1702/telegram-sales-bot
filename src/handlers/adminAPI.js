@@ -646,6 +646,69 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Resend credentials to customer (for cases where message didn't arrive)
+    app.post('/api/admin/orders/:code/resend-credentials', async (req, res) => {
+        try {
+            const order = db.getOrderByCode(req.params.code);
+            if (!order) {
+                return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
+            }
+            if (order.status !== 'delivered' && order.status !== 'paid') {
+                return res.status(400).json({ error: true, message: `Cannot resend for status: ${order.status}`, code: 'INVALID_STATUS' });
+            }
+            if (!bot) {
+                return res.status(500).json({ error: true, message: 'Bot not initialized', code: 'BOT_ERROR' });
+            }
+
+            const product = db.getProductById(order.product_id);
+            const productType = product ? product.product_type : 'credential';
+
+            if (productType !== 'credential') {
+                return res.status(400).json({ error: true, message: `Resend only works for credential-type products`, code: 'INVALID_TYPE' });
+            }
+
+            // Get credentials linked to this order
+            const d = db.getDb();
+            const stmt = d.prepare('SELECT * FROM credentials WHERE order_id = ?');
+            stmt.bind([order.id]);
+            const credentials = [];
+            while (stmt.step()) credentials.push(stmt.getAsObject());
+            stmt.free();
+
+            if (credentials.length === 0) {
+                return res.status(400).json({ error: true, message: 'No credentials found for this order', code: 'NO_CREDENTIALS' });
+            }
+
+            // Build and send credential message
+            const fields = product ? JSON.parse(product.credential_fields || '[]') : [];
+            let text = `🔄 **GỬI LẠI — ĐƠN #${order.order_code}**\n\n`;
+            text += `📦 Sản phẩm: ${order.product_name}\n`;
+            text += `🔢 Số lượng: ${order.quantity}\n\n`;
+            text += `━━━━━━━━━━━━━━━━━━\n`;
+            text += `📋 **THÔNG TIN TÀI KHOẢN:**\n\n`;
+
+            for (let i = 0; i < credentials.length; i++) {
+                const cred = credentials[i];
+                const data = typeof cred.data === 'string' ? JSON.parse(cred.data) : (cred.data || {});
+                text += `━━━ Tài khoản ${i + 1} ━━━\n`;
+                for (const field of fields) {
+                    if (data[field.key]) {
+                        text += `${field.icon || '📋'} ${field.label}: \`${data[field.key]}\`\n`;
+                    }
+                }
+                text += '\n';
+            }
+            text += `━━━━━━━━━━━━━━━━━━\n`;
+            text += `⚠️ Lưu ý: Vui lòng đổi mật khẩu sau khi nhận tài khoản.`;
+
+            await bot.sendMessage(order.telegram_user_id, text, { parse_mode: 'Markdown' });
+
+            res.json({ message: `Resent ${credentials.length} credentials to customer` });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Customers ====================
 
     app.get('/api/admin/customers', (req, res) => {
