@@ -1076,14 +1076,14 @@ Số Lượng Đang Hiện Có 10"
     }
 
     // ==================== Nav ====================
-    function showSection(name) {
+    async function showSection(name) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById('sec-' + name).classList.add('active');
       document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
       event.currentTarget.classList.add('active');
       if (name === 'dashboard') loadDashboard();
       if (name === 'products') loadProducts();
-      if (name === 'credentials') { populateProductSelects(); loadCredentials(); }
+      if (name === 'credentials') { await populateProductSelects(); loadCredentials(); }
       if (name === 'orders') loadOrders();
       if (name === 'customers') loadCustomers();
       if (name === 'settings') loadBankAccounts();
@@ -1418,7 +1418,10 @@ Số Lượng Đang Hiện Có 10"
     }
 
     // ==================== Credentials ====================
-    function populateProductSelects() {
+    async function populateProductSelects() {
+      if (!productsCache.length) {
+        try { productsCache = await apiFetch('/products'); } catch(e) {}
+      }
       const opts = productsCache.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
       document.getElementById('credProductId').innerHTML = opts;
       document.getElementById('bulkProductId').innerHTML = opts;
