@@ -361,105 +361,10 @@ function setupAdminAPI(app, bot) {
                 return res.status(400).json({ error: true, message: 'urls array required', code: 'VALIDATION_ERROR' });
             }
 
-            // Limit to 30 URLs per request to avoid abuse
+            // Limit to 30 URLs per request
             const toCheck = urls.slice(0, 30);
-            const http = require('http');
-            const https = require('https');
-
-            const checkUrl = (url) => {
-                return new Promise((resolve) => {
-                    const timeout = 8000;
-                    try {
-                        const urlObj = new URL(url);
-                        const client = urlObj.protocol === 'https:' ? https : http;
-
-                        const req = client.get(url, {
-                            timeout,
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                'Accept': 'text/html,application/xhtml+xml,application/json',
-                            },
-                        }, (response) => {
-                            let body = '';
-                            response.on('data', (chunk) => {
-                                body += chunk;
-                                // Only read first 10KB to check for keywords
-                                if (body.length > 10240) response.destroy();
-                            });
-                            response.on('end', () => {
-                                const status = response.statusCode;
-                                const bodyLower = body.toLowerCase();
-
-                                // Check for redirect (gift redeemed often redirects)
-                                if (status >= 300 && status < 400) {
-                                    const location = response.headers.location || '';
-                                    resolve({
-                                        url,
-                                        status: 'redirected',
-                                        httpStatus: status,
-                                        detail: `Redirect → ${location}`,
-                                        redeemed: bodyLower.includes('redeem') || bodyLower.includes('claim'),
-                                    });
-                                    return;
-                                }
-
-                                if (status === 200) {
-                                    // Analyze body for Claude gift / redeem patterns
-                                    const isRedeemed = bodyLower.includes('already been redeemed') ||
-                                        bodyLower.includes('already redeemed') ||
-                                        bodyLower.includes('has been claimed') ||
-                                        bodyLower.includes('already claimed') ||
-                                        bodyLower.includes('đã được sử dụng') ||
-                                        bodyLower.includes('gift has been used');
-                                    const isExpired = bodyLower.includes('expired') ||
-                                        bodyLower.includes('hết hạn') ||
-                                        bodyLower.includes('no longer valid');
-                                    const isValid = bodyLower.includes('redeem') ||
-                                        bodyLower.includes('accept') ||
-                                        bodyLower.includes('claim this gift') ||
-                                        bodyLower.includes('gift');
-
-                                    if (isRedeemed) {
-                                        resolve({ url, status: 'redeemed', httpStatus: 200, detail: 'Gift đã được redeem' });
-                                    } else if (isExpired) {
-                                        resolve({ url, status: 'expired', httpStatus: 200, detail: 'Link đã hết hạn' });
-                                    } else if (isValid) {
-                                        resolve({ url, status: 'live', httpStatus: 200, detail: 'Link còn sống, chưa redeem' });
-                                    } else {
-                                        resolve({ url, status: 'live', httpStatus: 200, detail: 'Link trả về 200 OK' });
-                                    }
-                                } else if (status === 404) {
-                                    resolve({ url, status: 'dead', httpStatus: 404, detail: 'Link không tồn tại (404)' });
-                                } else if (status === 403) {
-                                    resolve({ url, status: 'cf_blocked', httpStatus: 403, detail: 'Cloudflare anti-bot chặn (cần mở thủ công)' });
-                                } else {
-                                    resolve({ url, status: 'unknown', httpStatus: status, detail: `HTTP ${status}` });
-                                }
-                            });
-                        });
-
-                        req.on('error', (err) => {
-                            resolve({ url, status: 'error', httpStatus: 0, detail: err.message });
-                        });
-
-                        req.on('timeout', () => {
-                            req.destroy();
-                            resolve({ url, status: 'timeout', httpStatus: 0, detail: 'Timeout (8s)' });
-                        });
-                    } catch (err) {
-                        resolve({ url, status: 'error', httpStatus: 0, detail: err.message });
-                    }
-                });
-            };
-
-            // Check URLs in parallel (max 5 concurrent)
-            const results = [];
-            const batchSize = 5;
-            for (let i = 0; i < toCheck.length; i += batchSize) {
-                const batch = toCheck.slice(i, i + batchSize).map(checkUrl);
-                const batchResults = await Promise.all(batch);
-                results.push(...batchResults);
-            }
+            const { checkLinks } = require('../utils/linkChecker');
+            const results = await checkLinks(toCheck, 5);
 
             res.json({ results });
         } catch (err) {
