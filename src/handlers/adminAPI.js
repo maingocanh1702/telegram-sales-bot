@@ -356,17 +356,18 @@ function setupAdminAPI(app, bot) {
     // Check if credential links are still alive
     app.post('/api/admin/credentials/check-links', async (req, res) => {
         try {
-            const { urls } = req.body;
+            const { urls, forceRefresh } = req.body;
             if (!urls || !Array.isArray(urls) || urls.length === 0) {
                 return res.status(400).json({ error: true, message: 'urls array required', code: 'VALIDATION_ERROR' });
             }
 
             // Limit to 30 URLs per request
             const toCheck = urls.slice(0, 30);
-            const { checkLinks } = require('../utils/linkChecker');
-            const results = await checkLinks(toCheck, 5);
+            const { checkLinks, getCacheStats } = require('../utils/linkChecker');
+            const results = await checkLinks(toCheck, 5, !!forceRefresh);
 
-            res.json({ results });
+            const cachedCount = results.filter(r => r.fromCache).length;
+            res.json({ results, cachedCount, cacheStats: getCacheStats() });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
