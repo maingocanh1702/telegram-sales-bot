@@ -78,6 +78,15 @@ function setupMenuHandler(bot) {
 function sendMainMenu(bot, chatId, editMessageId = null) {
     let text = '🏪 **SHOP TỰ ĐỘNG**\n\n';
     text += '👋 Chào mừng bạn đến với shop!\n';
+
+    // New user discount hint
+    if (!editMessageId && db.isNewUser(chatId)) {
+        const activeCodes = db.getActiveDiscountCodes();
+        if (activeCodes.some(c => c.is_new_user_only)) {
+            text += '🎁 _Shop có mã giảm giá dành cho khách mới! Lấy mã tại /discount_\n';
+        }
+    }
+
     text += 'Chọn chức năng bên dưới để bắt đầu:';
 
     const inlineKeyboard = [
