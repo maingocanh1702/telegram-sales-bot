@@ -304,18 +304,45 @@ function analyzeTextContent(url, httpStatus, text) {
         return { url, status: 'expired', httpStatus, detail: 'Link đã hết hạn' };
     }
 
-    // Valid / live indicators
-    if (lower.includes('redeem this gift') ||
-        lower.includes('accept gift') ||
-        lower.includes('claim this gift') ||
-        lower.includes('activate your')) {
-        return { url, status: 'live', httpStatus, detail: 'Link còn sống, chưa redeem' };
+    // Valid / live indicators — expanded for Claude gift pages
+    const livePatterns = [
+        'redeem this gift', 'accept gift', 'claim this gift', 'activate your',
+        'redeem gift', 'claim gift', 'accept this gift',
+        // Claude-specific: gift page shows plan info when valid
+        'pro plan', 'team plan', 'max plan',
+        'month of claude', 'months of claude',
+        'been gifted', 'you\'ve been gifted', "you've been gifted",
+        'someone has gifted', 'gift from',
+        // Page has sign-up/login CTA for valid gifts
+        'sign up to redeem', 'log in to redeem', 'log in to claim',
+        'create an account', 'sign up for free',
+        // Generic button text
+        'redeem now', 'claim now', 'get started',
+    ];
+    for (const pattern of livePatterns) {
+        if (lower.includes(pattern)) {
+            return { url, status: 'live', httpStatus, detail: 'Link còn sống, chưa redeem' };
+        }
+    }
+
+    // If we got a rendered page with substantial content but no clear signals,
+    // check if it looks like a valid Claude page (has claude branding)
+    if (httpStatus === 200 && text.length > 1000) {
+        const hasClaudeBranding = lower.includes('claude') && (lower.includes('anthropic') || lower.includes('gift'));
+        // If it has Claude branding but no "redeemed"/"expired" text → likely live
+        if (hasClaudeBranding && !lower.includes('error') && !lower.includes('not found')) {
+            console.log(`[LinkChecker] Claude page detected, assuming live. Content preview: ${text.substring(0, 300)}`);
+            return { url, status: 'live', httpStatus, detail: 'Link còn sống (Claude page detected)' };
+        }
     }
 
     // 404
     if (httpStatus === 404) {
         return { url, status: 'dead', httpStatus, detail: 'Link không tồn tại (404)' };
     }
+
+    // Debug: log content for unknown status to help diagnose
+    console.log(`[LinkChecker] Unknown status for ${url}. HTTP ${httpStatus}. Content preview: ${text.substring(0, 500)}`);
 
     // 200 but can't determine
     if (httpStatus === 200) {
