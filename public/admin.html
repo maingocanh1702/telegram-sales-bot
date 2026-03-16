@@ -1924,6 +1924,9 @@ Số Lượng Đang Hiện Có 10"
           }
           if (o.status === 'delivered') {
             html += `<button class="btn btn-sm" onclick="viewOrderCredentials('${o.order_code}')" title="Xem tài khoản đã giao" style="background:var(--bg-card);border:1px solid var(--border);margin-right:4px">🔑</button>`;
+            if (o.product_type === 'credential') {
+              html += `<button class="btn btn-sm" onclick="resendCredentials('${o.order_code}')" title="Gửi lại credential cho khách" style="background:var(--bg-card);border:1px solid var(--border);margin-right:4px">🔄</button>`;
+            }
             html += `<button class="btn btn-sm" onclick="setOrderExpiry('${o.order_code}')" title="Set thời hạn" style="background:var(--bg-card);border:1px solid var(--border)">⏰</button>`;
           }
           html += '</td>';
@@ -2252,6 +2255,14 @@ Số Lượng Đang Hiện Có 10"
         await apiFetch(`/orders/${code}/mark-delivered`, { method: 'POST' });
         toast('✅ Đã đánh dấu giao hàng thành công!');
         loadOrders();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function resendCredentials(code) {
+      if (!confirm(`Gửi lại credential cho khách đơn ${code}?`)) return;
+      try {
+        const res = await apiFetch(`/orders/${code}/resend-credentials`, { method: 'POST' });
+        toast(`✅ ${res.message}`);
       } catch (e) { toast(e.message, 'error'); }
     }
 

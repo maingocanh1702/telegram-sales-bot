@@ -188,7 +188,7 @@ async function deliverCredential(bot, order, product) {
         if (product && product.subscription_days) {
             db.setSubscriptionExpiry(order.order_code, product.subscription_days);
         }
-        console.log(`✅ Delivered ${credentials.length} credentials for order ${order.order_code}`);
+        console.log(`✅ Delivered ${credentials.length} credentials for order ${order.order_code} (text length: ${text.length}, fields: ${fields.length})`);
         return true;
     } catch (err) {
         console.error(`Error delivering credentials for order ${order.order_code}:`, err.message);

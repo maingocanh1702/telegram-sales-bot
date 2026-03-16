@@ -83,15 +83,38 @@ function setupWebhookHandler(app, bot) {
             }
 
             // Notify user
-            bot.sendMessage(order.telegram_user_id,
+            await bot.sendMessage(order.telegram_user_id,
                 `✅ Đã xác nhận thanh toán cho đơn hàng #${orderCode}!\n\n` +
                 `Đang gửi thông tin sản phẩm...`
             );
 
-            // Deliver credentials
-            await deliverCredentials(bot, order);
+            // Deliver credentials with robust error handling
+            try {
+                const delivered = await deliverCredentials(bot, order);
+                if (!delivered) {
+                    console.error(`⚠️ deliverCredentials returned false for ${orderCode}`);
+                    // Notify admin about delivery failure
+                    bot.sendMessage(config.adminTelegramId,
+                        `⚠️ **GIAO HÀNG THẤT BẠI**\n\n` +
+                        `Đơn: #${orderCode}\n` +
+                        `SP: ${order.product_name} x${order.quantity}\n` +
+                        `Khách: @${order.telegram_username || order.telegram_user_id}\n\n` +
+                        `Vui lòng kiểm tra stock và giao thủ công.`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } catch (deliveryErr) {
+                console.error(`❌ deliverCredentials threw for ${orderCode}:`, deliveryErr.message);
+                bot.sendMessage(config.adminTelegramId,
+                    `❌ **LỖI GIAO HÀNG**\n\n` +
+                    `Đơn: #${orderCode}\n` +
+                    `Lỗi: ${deliveryErr.message}\n\n` +
+                    `Vui lòng giao thủ công.`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
 
-            // Notify admin
+            // Notify admin about payment
             bot.sendMessage(config.adminTelegramId,
                 `💰 Đơn hàng #${orderCode} đã thanh toán!\n` +
                 `SP: ${order.product_name} x${order.quantity}\n` +
