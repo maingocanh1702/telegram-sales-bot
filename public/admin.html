@@ -1917,8 +1917,18 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('dupReportTitle').textContent = `🔗 Kết quả kiểm tra ${urlsToCheck.length} links`;
         document.getElementById('dupReportBody').innerHTML = html;
 
-        // Actions — fix: open tabs with delay to avoid popup blocker
+        // Save for export
+        window._lastCheckResults = res.results.map((r, i) => ({
+          line: urlIndexMap[i]?.line || (i + 1),
+          url: r.url,
+          status: r.status,
+          detail: r.detail,
+          fromCache: r.fromCache || false,
+        }));
+
+        // Actions
         let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+        actionsHtml += ` <button class="btn btn-ghost" onclick="exportCheckResults()" style="color:var(--primary)">📥 Export Excel</button>`;
         if (hasCfBlocked) {
           actionsHtml += ` <button class="btn btn-primary" onclick="openAllLinksStaggered()">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
           window._linkCheckUrls = [...new Set(urlsToCheck)];
@@ -1931,6 +1941,40 @@ Số Lượng Đang Hiện Có 10"
     }
 
 
+
+    function exportCheckResults() {
+      const results = window._lastCheckResults;
+      if (!results || results.length === 0) return;
+
+      const statusMap = {
+        live: 'Còn sống', redeemed: 'Đã redeem', expired: 'Hết hạn',
+        dead: 'Dead', cf_blocked: 'Cloudflare blocked', unknown: 'Không rõ',
+        in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)',
+        timeout: 'Timeout', error: 'Lỗi', redirected: 'Redirect',
+      };
+
+      // CSV with BOM for Excel Vietnamese
+      const BOM = '\uFEFF';
+      const header = ['STT', 'Dòng', 'URL', 'Trạng thái', 'Chi tiết', 'Nguồn'];
+      const rows = results.map((r, i) => [
+        i + 1,
+        r.line,
+        `"${r.url.replace(/"/g, '""')}"`,
+        statusMap[r.status] || r.status,
+        `"${(r.detail || '').replace(/"/g, '""')}"`,
+        r.fromCache ? 'Cache' : 'ScraperAPI',
+      ]);
+
+      const csv = BOM + [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const date = new Date().toISOString().slice(0, 10);
+      a.download = `link-check-${date}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
     function openAllLinksStaggered() {
       const urls = window._linkCheckUrls || [];
