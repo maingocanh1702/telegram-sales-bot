@@ -111,6 +111,7 @@ SePay POST → Extract order code from content
 | Limits | Tổng lượt dùng, lượt/người, đơn tối thiểu, giảm tối đa |
 | Restrictions | `required_group_id` (group Telegram), `allowed_user_id` (user cụ thể) |
 | Visibility | `is_hidden` — ẩn khỏi /discount |
+| New user only | `is_new_user_only` — chỉ user chưa mua thành công đơn nào |
 | Schedule | `starts_at`, `expires_at` |
 | Discount qty | `max_discount_qty` — số SP được giảm trong 1 đơn |
 
@@ -277,5 +278,5 @@ public/
 | v1.3 | Multi-bank, resend credentials, group discounts | ✅ Done |
 | v2.0 | Rebuild codebase, /profile, /help, /huongdan, config validation | ✅ Done |
 | v2.1 | Multi-product discounts, credential link checker, ScraperAPI, cache | ✅ Done |
-| v2.2 | Pre-check flow, SQLite cache, DB dup detection, export CSV, cache history | ✅ Done |
+| v2.2 | Pre-check flow, SQLite cache, DB dup detection, export CSV, cache history, new-user discount | ✅ Done |
 | v2.3 | CTV management, analytics dashboard | 🚧 In progress |

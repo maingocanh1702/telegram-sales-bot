@@ -11,6 +11,10 @@
 - **Export CSV** kết quả check (batch hiện tại + toàn bộ lịch sử cache)
 - API `GET /api/admin/credentials/link-cache` — export lịch sử check
 - Smart UI: ẩn nút "Bỏ qua" khi 0 link mới, thông báo khi tất cả đã có trong kho
+- **New-user-only discount** (`is_new_user_only`): mã giảm giá chỉ dành cho khách mới
+  - `/discount` tự ẩn mã khi user đã mua đơn thành công
+  - Checkout prompt gợi ý "Bạn có mã giảm giá dành cho khách mới!"
+  - Admin panel: checkbox + badge 🆕 Mới
 
 ### Fixed
 

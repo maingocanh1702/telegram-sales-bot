@@ -87,6 +87,7 @@
 | Export CSV (batch) | ✅ Done | Xuất kết quả check hiện tại |
 | Export CSV (lịch sử) | ✅ Done | Tải toàn bộ cache history |
 | Smart UI edge cases | ✅ Done | 0 link mới, all-in-DB, confirmation dialog |
+| New-user-only discount | ✅ Done | Mã giảm giá chỉ khách mới + checkout suggest |
 
 ---
 
@@ -128,7 +129,7 @@
 | Phase 1 ✅ | DB schema, CRUD, webhook | Admin panel tabs | Menu, order flow |
 | Phase 2 ✅ | Config validation, rebuild | — | /profile, /help |
 | Phase 3 ✅ | Link checker, multi-discount, cache | Chip selector, link UI | Featured redesign |
-| Phase 3.5 ✅ | SQLite cache, pre-check API, export | Pre-check dialog, CSV export | — |
+| Phase 3.5 ✅ | SQLite cache, pre-check API, export, new-user discount | Pre-check dialog, CSV export, 🆕 badge | Checkout suggest |
 | Phase 4 🚧 | CTV APIs, analytics | CTV tab, charts | CTV commands |
 | Phase 5 📋 | PostgreSQL, multi-admin | Notification center | i18n, referral |
 
