@@ -464,10 +464,17 @@ function addCredential(productId, data) {
 }
 
 function bulkAddCredentials(productId, credsList) {
-    for (const data of credsList) {
-        db.run('INSERT INTO credentials (product_id, data) VALUES (?, ?)', [productId, JSON.stringify(data)]);
+    try {
+        db.run('BEGIN TRANSACTION');
+        for (const data of credsList) {
+            db.run('INSERT INTO credentials (product_id, data) VALUES (?, ?)', [productId, JSON.stringify(data)]);
+        }
+        db.run('COMMIT');
+        saveDatabase();
+    } catch (err) {
+        db.run('ROLLBACK');
+        throw err;
     }
-    saveDatabase();
     return credsList.length;
 }
 
@@ -675,7 +682,15 @@ function getUniqueCustomerIds() {
     return results;
 }
 
-function getCustomerStats() {
+function getCustomerStats(page = 1, limit = 50) {
+    const offset = (page - 1) * limit;
+
+    // Get total count for pagination
+    const countStmt = db.prepare('SELECT COUNT(DISTINCT telegram_user_id) as total FROM orders');
+    countStmt.step();
+    const totalCustomers = countStmt.getAsObject().total;
+    countStmt.free();
+
     const stmt = db.prepare(`
       SELECT 
         o.telegram_user_id,
@@ -691,11 +706,42 @@ function getCustomerStats() {
       LEFT JOIN products p ON o.product_id = p.id
       GROUP BY o.telegram_user_id
       ORDER BY total_spent DESC
+      LIMIT ? OFFSET ?
     `);
+    stmt.bind([limit, offset]);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
-    return results;
+    return { customers: results, totalCustomers, page, limit, totalPages: Math.ceil(totalCustomers / limit) };
+}
+
+/**
+ * Get aggregate dashboard stats from ALL orders (not limited to recent N)
+ * Returns: totalRevenue, todayRevenue, pendingOrders, paidOrders, cancelledOrders, expiredOrders, totalOrders, conversionRate
+ */
+function getDashboardStats() {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const stmt = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') THEN total_amount ELSE 0 END), 0) as totalRevenue,
+        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') AND DATE(paid_at) = ? THEN total_amount ELSE 0 END), 0) as todayRevenue,
+        COUNT(*) as totalOrders,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingOrders,
+        SUM(CASE WHEN status IN ('paid','delivered') THEN 1 ELSE 0 END) as paidOrders,
+        SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelledOrders,
+        SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expiredOrders
+      FROM orders
+    `);
+    stmt.bind([todayStr]);
+    stmt.step();
+    const row = stmt.getAsObject();
+    stmt.free();
+
+    const total = row.totalOrders || 0;
+    const paid = row.paidOrders || 0;
+    row.conversionRate = total > 0 ? Math.round((paid / total) * 100 * 10) / 10 : 0;
+
+    return row;
 }
 
 function getCustomerOrders(telegramUserId) {
@@ -754,6 +800,7 @@ module.exports = {
     setSubscriptionExpiry,
     setOrderExpiryDate,
     getAllProductsStock,
+    getDashboardStats,
     // Settings
     getSetting,
     setSetting,
