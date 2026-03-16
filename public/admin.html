@@ -1684,6 +1684,16 @@ Số Lượng Đang Hiện Có 10"
     }
 
     // Check if credential URLs are still alive
+    function formatTimeAgo(timestamp) {
+      const diff = Date.now() - timestamp;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'vừa xong';
+      if (mins < 60) return `${mins} phút trước`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs} giờ trước`;
+      return `${Math.floor(hrs / 24)} ngày trước`;
+    }
+
     async function checkLinksInBulk() {
       const productId = document.getElementById('bulkProductId').value;
       const fields = getProductFields(productId);
@@ -1752,22 +1762,37 @@ Số Lượng Đang Hiện Có 10"
 
         if (hasDbDups) {
           html += `<div style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px">`;
-          html += `<div style="color:#fb923c;font-weight:600;margin-bottom:6px">📦 ${preRes.dbDups.length} link đã có trong kho:</div>`;
+          html += `<div style="color:#fb923c;font-weight:600;margin-bottom:8px">📦 ${preRes.dbDups.length} link đã có trong kho:</div>`;
           preRes.dbDups.forEach(d => {
-            const short = d.url.length > 55 ? d.url.substring(0, 55) + '...' : d.url;
-            html += `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;color:var(--text-secondary)">${statusIcons[d.status] || '📦'} <code style="flex:1;word-break:break-all">${short}</code> <span style="color:#fb923c;white-space:nowrap">${d.detail}</span></div>`;
+            const short = d.url.length > 50 ? d.url.substring(0, 50) + '...' : d.url;
+            html += `<div style="padding:5px 0;border-bottom:1px solid rgba(251,146,60,0.15)">`;
+            html += `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary)">${statusIcons[d.status] || '📦'} <code style="flex:1;word-break:break-all">${short}</code></div>`;
+            if (d.products && d.products.length > 0) {
+              html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px;padding-left:20px">`;
+              d.products.forEach(p => {
+                const soldTag = p.isSold ? '<span style="color:#ef4444;font-size:9px">đã giao</span>' : '<span style="color:#22c55e;font-size:9px">chưa giao</span>';
+                html += `<a href="#" onclick="event.preventDefault();closeModal('dupReportModal');showTab('products');setTimeout(()=>{const el=document.querySelector('[data-product-id=\\'${p.productId}\\']');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},300)" style="color:var(--primary);font-size:11px;text-decoration:underline;cursor:pointer">${p.productName}</a> ${soldTag}`;
+              });
+              html += `</div>`;
+            }
+            html += `</div>`;
           });
           html += `</div>`;
         }
 
         if (hasCached) {
           html += `<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px">`;
-          html += `<div style="color:#a855f7;font-weight:600;margin-bottom:6px">💾 ${preRes.cached.length} link đã check ở batch trước (dùng kết quả cũ):</div>`;
+          html += `<div style="color:#a855f7;font-weight:600;margin-bottom:8px">💾 ${preRes.cached.length} link đã check trước đó (dùng kết quả cũ):</div>`;
           preRes.cached.forEach(c => {
-            const short = c.url.length > 55 ? c.url.substring(0, 55) + '...' : c.url;
+            const short = c.url.length > 50 ? c.url.substring(0, 50) + '...' : c.url;
             const icon = statusIcons[c.status] || '❓';
             const label = statusLabels[c.status] || c.detail;
-            html += `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;color:var(--text-secondary)">${icon} <code style="flex:1;word-break:break-all">${short}</code> <span style="white-space:nowrap">${label}</span></div>`;
+            const timeAgo = c.cachedAt ? formatTimeAgo(c.cachedAt) : '';
+            html += `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;color:var(--text-secondary);border-bottom:1px solid rgba(168,85,247,0.1)">`;
+            html += `${icon} <code style="flex:1;word-break:break-all">${short}</code>`;
+            html += `<span style="color:${statusLabels[c.status] === 'Còn sống' ? '#22c55e' : statusLabels[c.status] === 'Đã redeem' ? '#ef4444' : '#a855f7'};white-space:nowrap;font-weight:500">${label}</span>`;
+            if (timeAgo) html += `<span style="color:var(--text-muted);font-size:10px;white-space:nowrap">${timeAgo}</span>`;
+            html += `</div>`;
           });
           html += `</div>`;
         }
