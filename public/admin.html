@@ -953,6 +953,17 @@ Số Lượng Đang Hiện Có 10"
     </div>
   </div>
 
+  <!-- Duplicate Credentials Report Modal -->
+  <div class="modal-overlay" id="dupReportModal">
+    <div class="modal" style="max-width:750px;max-height:85vh;overflow-y:auto">
+      <h3 id="dupReportTitle">⚠️ Phát hiện credential trùng</h3>
+      <div id="dupReportBody" style="margin:16px 0"></div>
+      <div class="modal-actions" id="dupReportActions">
+        <button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- Order Credentials Modal -->
@@ -1480,7 +1491,19 @@ Số Lượng Đang Hiện Có 10"
       const inputs = document.querySelectorAll('#credFieldsContainer input[data-key]');
       const data = {};
       inputs.forEach(inp => { data[inp.dataset.key] = inp.value; });
+
       try {
+        // Check for duplicates first
+        const checkRes = await apiFetch('/credentials/check-duplicates', {
+          method: 'POST',
+          body: { credentials: [data] },
+        });
+
+        if (checkRes.duplicateCount > 0) {
+          renderDuplicateReport(checkRes.duplicates, [data], productId, 'single');
+          return;
+        }
+
         await apiFetch('/credentials', { method: 'POST', body: { productId, data } });
         toast('Đã thêm credential');
         closeModal('credModal');
@@ -1502,13 +1525,108 @@ Số Lượng Đang Hiện Có 10"
       });
 
       if (credentials.length === 0) { toast('Không tìm thấy credentials hợp lệ', 'error'); return; }
+
       try {
+        // Check for duplicates first
+        const checkRes = await apiFetch('/credentials/check-duplicates', {
+          method: 'POST',
+          body: { credentials },
+        });
+
+        if (checkRes.duplicateCount > 0) {
+          renderDuplicateReport(checkRes.duplicates, credentials, productId, 'bulk');
+          return;
+        }
+
         const res = await apiFetch('/credentials/bulk', { method: 'POST', body: { productId, credentials } });
         toast(res.message);
         closeModal('bulkModal');
         document.getElementById('bulkData').value = '';
         loadCredentials();
       } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ---- Duplicate Report ----
+    function renderDuplicateReport(duplicates, allCredentials, productId, mode) {
+      const dupIndices = new Set(duplicates.map(d => d.index));
+      const nonDupCount = allCredentials.length - dupIndices.size;
+
+      let html = `<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">`;
+      html += `<strong>⚠️ ${duplicates.length}/${allCredentials.length}</strong> credential đã tồn tại trên hệ thống`;
+      if (nonDupCount > 0) {
+        html += `<br><span style="color:var(--text-muted)">Có ${nonDupCount} credential mới chưa trùng</span>`;
+      }
+      html += `</div>`;
+
+      for (const dup of duplicates) {
+        const ex = dup.existing;
+        html += `<div style="background:var(--bg-main);border-radius:8px;padding:14px;margin-bottom:10px;border:1px solid var(--border)">`;
+
+        // Input data summary
+        const inputSummary = Object.entries(dup.inputData).map(([k, v]) => `${k}: ${v}`).join(' · ');
+        html += `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">📝 Dòng ${dup.index + 1}: <code style="word-break:break-all">${inputSummary}</code></div>`;
+
+        // Existing credential info
+        html += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:13px">`;
+        html += `<span>📦 <strong>${ex.product_name}</strong></span>`;
+
+        if (ex.is_sold) {
+          html += `<span class="badge badge-muted">Đã bán</span>`;
+          if (ex.order) {
+            html += `<span>👤 @${ex.order.telegram_username || 'N/A'}</span>`;
+            if (ex.order.customer_email) html += `<span>📧 ${ex.order.customer_email}</span>`;
+            html += `<code style="cursor:pointer;color:var(--primary);text-decoration:underline;padding:2px 6px;background:rgba(255,255,255,0.06);border-radius:4px" onclick="closeModal('dupReportModal');viewOrderCredentials('${ex.order.order_code}')" title="Xem đơn hàng">${ex.order.order_code}</code>`;
+          }
+        } else {
+          html += `<span class="badge badge-success">Chưa bán</span>`;
+        }
+        html += `</div>`;
+
+        // Show existing credential data
+        html += `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">`;
+        for (const [key, val] of Object.entries(ex.data)) {
+          const safeVal = String(val || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          html += `<div style="font-size:11px"><span style="color:var(--text-muted)">${key}:</span> <code style="word-break:break-all;padding:2px 4px;background:rgba(255,255,255,0.06);border-radius:3px">${safeVal}</code></div>`;
+        }
+        html += `</div>`;
+        html += `</div>`;
+      }
+
+      document.getElementById('dupReportBody').innerHTML = html;
+
+      // Actions: skip duplicates and import rest, or cancel
+      let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Hủy</button>`;
+      if (nonDupCount > 0) {
+        // Store pending import data for the "proceed" button
+        window._pendingImport = { allCredentials, dupIndices, productId, mode };
+        actionsHtml += ` <button class="btn btn-primary" onclick="proceedImportSkippingDuplicates()">Bỏ qua trùng, import ${nonDupCount} credential mới</button>`;
+      }
+      document.getElementById('dupReportActions').innerHTML = actionsHtml;
+
+      document.getElementById('dupReportModal').classList.add('active');
+    }
+
+    async function proceedImportSkippingDuplicates() {
+      const { allCredentials, dupIndices, productId, mode } = window._pendingImport;
+      const cleanCreds = allCredentials.filter((_, i) => !dupIndices.has(i));
+
+      try {
+        if (mode === 'single') {
+          // Shouldn't happen for single (if dup found, nothing to import), but handle anyway
+          if (cleanCreds.length === 0) { toast('Không có credential mới để thêm', 'error'); return; }
+          await apiFetch('/credentials', { method: 'POST', body: { productId, data: cleanCreds[0] } });
+          toast('Đã thêm credential');
+        } else {
+          const res = await apiFetch('/credentials/bulk', { method: 'POST', body: { productId, credentials: cleanCreds } });
+          toast(res.message);
+          document.getElementById('bulkData').value = '';
+        }
+        closeModal('dupReportModal');
+        closeModal('credModal');
+        closeModal('bulkModal');
+        loadCredentials();
+      } catch (e) { toast(e.message, 'error'); }
+      window._pendingImport = null;
     }
 
     function editCred(id, dataB64) {
