@@ -2417,16 +2417,23 @@ Số Lượng Đang Hiện Có 10"
       container.innerHTML = html;
     }
 
+    function updateChipStyles() {
+      document.querySelectorAll('#dProductList .dp-chip').forEach(c => {
+        const isActive = c.classList.contains('active');
+        c.style.background = isActive ? 'var(--primary)' : 'transparent';
+        c.style.color = isActive ? '#fff' : 'var(--text-secondary)';
+        c.style.borderColor = isActive ? 'var(--primary)' : 'var(--border)';
+      });
+    }
+
     function toggleProductChip(el) {
       const isAll = el.dataset.value === 'all';
       if (isAll) {
-        // 'All' clicked — activate it, deactivate all others
         document.querySelectorAll('#dProductList .dp-chip').forEach(c => {
           c.classList.remove('active');
         });
         el.classList.add('active');
       } else {
-        // Product chip clicked — toggle it, deactivate 'All'
         el.classList.toggle('active');
         const allChip = document.querySelector('#dProductList .dp-chip[data-value="all"]');
         const anySelected = document.querySelectorAll('#dProductList .dp-chip.active:not([data-value="all"])').length > 0;
@@ -2436,10 +2443,11 @@ Số Lượng Đang Hiện Có 10"
           allChip.classList.add('active');
         }
       }
+      updateChipStyles();
     }
 
     function buildProductChip(value, label, isActive) {
-      return `<span class="dp-chip${isActive ? ' active' : ''}" data-value="${value}" onclick="toggleProductChip(this)" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border);transition:all .15s;user-select:none;white-space:nowrap;background:${isActive ? 'var(--primary)' : 'transparent'};color:${isActive ? '#fff' : 'var(--text-secondary)'};border-color:${isActive ? 'var(--primary)' : 'var(--border)'}">${label}</span>`;
+      return `<span class="dp-chip${isActive ? ' active' : ''}" data-value="${value}" onclick="toggleProductChip(this)" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid ${isActive ? 'var(--primary)' : 'var(--border)'};transition:all .15s;user-select:none;white-space:nowrap;background:${isActive ? 'var(--primary)' : 'transparent'};color:${isActive ? '#fff' : 'var(--text-secondary)'}">${label}</span>`;
     }
 
     async function openDiscountModal(editId) {
