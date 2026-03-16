@@ -387,38 +387,55 @@ async function checkGenericUrl(url) {
 }
 
 /**
- * ScraperAPI fallback — bypasses Cloudflare via proxy + JS rendering
+ * ScraperAPI fallback — tiered approach to minimize credit usage:
+ * Tier 1: Basic proxy (1 credit) — often enough for API redirects
+ * Tier 2: JS rendering (10 credits) — for pages requiring JS
+ * Tier 3: JS rendering + US geo (20 credits) — last resort
  */
 async function checkViaScraperApi(url) {
     if (!SCRAPER_API_KEY) return null;
 
-    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true&country_code=us`;
+    const tiers = [
+        { label: 'basic', params: '', credits: 1, timeout: 15000 },
+        { label: 'render', params: '&render=true', credits: 10, timeout: 30000 },
+        { label: 'render+geo', params: '&render=true&country_code=us', credits: 20, timeout: 35000 },
+    ];
 
-    try {
-        const resp = await fetch(scraperUrl, {
-            method: 'GET',
-            signal: AbortSignal.timeout(30000), // ScraperAPI can be slow with JS rendering
-        });
+    for (const tier of tiers) {
+        try {
+            console.log(`[LinkChecker] ScraperAPI tier "${tier.label}" (${tier.credits} credits) for ${url}`);
+            const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}${tier.params}`;
 
-        if (resp.status === 200) {
-            const text = await resp.text();
-            const result = analyzeTextContent(url, 200, text);
-            // If ScraperAPI returned the page but we still see Cloudflare, it didn't bypass
-            if (result.status === 'cf_blocked') {
-                return { url, status: 'cf_blocked', httpStatus: 403, detail: 'ScraperAPI cũng không bypass được Cloudflare' };
+            const resp = await fetch(scraperUrl, {
+                method: 'GET',
+                signal: AbortSignal.timeout(tier.timeout),
+            });
+
+            if (resp.status === 200) {
+                const text = await resp.text();
+                const result = analyzeTextContent(url, 200, text);
+                // If still Cloudflare blocked, try next tier
+                if (result.status === 'cf_blocked') {
+                    console.log(`[LinkChecker] Tier "${tier.label}" still CF blocked, trying next...`);
+                    continue;
+                }
+                // Got a real result — return it (saves credits!)
+                console.log(`[LinkChecker] Tier "${tier.label}" success: ${result.status}`);
+                return result;
             }
-            return result;
-        }
 
-        if (resp.status === 403 || resp.status === 429) {
-            return { url, status: 'error', httpStatus: resp.status, detail: `ScraperAPI error: HTTP ${resp.status} (hết credits hoặc rate limit)` };
-        }
+            if (resp.status === 403 || resp.status === 429) {
+                return { url, status: 'error', httpStatus: resp.status, detail: `ScraperAPI error: HTTP ${resp.status} (hết credits hoặc rate limit)` };
+            }
 
-        return null;
-    } catch (err) {
-        console.warn(`[LinkChecker] ScraperAPI fetch error:`, err.message);
-        return null;
+        } catch (err) {
+            console.warn(`[LinkChecker] ScraperAPI tier "${tier.label}" failed:`, err.message);
+            // Timeout on basic tier is expected, try render tier
+            continue;
+        }
     }
+
+    return { url, status: 'cf_blocked', httpStatus: 403, detail: 'ScraperAPI: tất cả tiers thất bại' };
 }
 
 /**
