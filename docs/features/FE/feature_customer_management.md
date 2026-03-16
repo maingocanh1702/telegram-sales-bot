@@ -8,7 +8,7 @@
 
 ## 1. Mô tả
 
-Admin xem danh sách khách hàng, thống kê mua hàng, lịch sử đơn hàng của từng khách. Dữ liệu aggregate từ bảng `orders` — không có bảng customer riêng.
+Admin xem danh sách khách hàng (aggregated từ orders), lịch sử đơn hàng từng khách. Sort by tổng chi tiêu. Hiển thị: tên SP đã mua, số đơn, delivered/cancelled counts.
 
 ---
 
@@ -16,81 +16,67 @@ Admin xem danh sách khách hàng, thống kê mua hàng, lịch sử đơn hàn
 
 ### UC-1: Xem danh sách khách hàng
 
-1. Admin tab "Khách hàng" → thống kê tổng + danh sách
-2. Table: Username, Tổng đơn, Đã mua, Tổng chi tiêu, Lần mua cuối
-3. Sort: theo chi tiêu (mặc định), theo số đơn, theo lần mua gần nhất
+1. Admin tab "Khách hàng" → table sorted by total_spent DESC
+2. Columns: Username, Tổng đơn, Đã giao/Hủy, Tổng chi tiêu, SP đã mua, Lần mua cuối
 
-### UC-2: Xem chi tiết khách hàng
+### UC-2: Xem chi tiết khách (orders history)
 
-1. Click khách → popup/modal chi tiết
-2. Stats: tổng chi tiêu, số đơn completed/cancelled
-3. Danh sách đơn hàng: product, amount, status, date
+1. Click khách → danh sách orders (tất cả status)
+2. Mỗi order: order_code, SP, số tiền, status, product_type, timestamps
 
 ### Edge Cases
 
 | Case | Xử lý |
 |------|-------|
-| Khách chưa hoàn tất đơn nào | Không hiển thị trong list |
-| Username empty | Hiển thị Telegram ID |
-| Khách mua 50+ đơn | Pagination trong order history |
+| Khách chỉ có pending orders | Hiện nhưng total_spent = 0 |
+| Username null | Hiện telegram_user_id |
+| Khách mua 5+ SP | product_names comma-separated |
 
 ---
 
 ## 3. Screens & States
 
-### Admin — Customer Tab
+### Admin — Customers Tab
 
 | State | Hiển thị |
 |-------|---------|
-| **Loading** | Skeleton cards + table |
-| **Data** | Stat cards (tổng KH, revenue, avg order, repeat rate) + table |
-| **Empty** | "Chưa có khách hàng. Khi có đơn hàng thành công, khách sẽ hiện ở đây." |
+| **Loading** | Skeleton table |
+| **Data** | Table sorted by spending |
+| **Empty** | "Chưa có khách hàng" |
 
-### Stat Cards
-
-| Card | Value | Subtitle |
-|------|-------|---------|
-| Tổng khách hàng | Count distinct | — |
-| Doanh thu tích lũy | Sum completed | VNĐ |
-| Giá trị đơn TB | Avg completed | VNĐ |
-| Tỉ lệ mua lại | Repeat % | % |
-
-### Customer Table
+### Customer Table (from getCustomerStats)
 
 | Column | Source |
 |--------|--------|
-| 👤 Username | `customer_username` |
-| 📦 Đơn hàng | `completed_orders / total_orders` |
-| 💰 Chi tiêu | `total_spent` (format VNĐ) |
-| 🕐 Lần mua cuối | `last_order_at` (relative time) |
+| 👤 Username | `telegram_username` |
+| 📦 Tổng đơn | `total_orders` |
+| ✅ Đã giao | `delivered_count` |
+| ❌ Đã hủy | `cancelled_count` |
+| 💰 Chi tiêu | `total_spent` (VNĐ, only paid+delivered) |
+| 🛍 SP đã mua | `product_names` (comma list) |
+| 🔢 Unique SP | `unique_products` |
+| 🕐 Mua cuối | `last_purchase` |
+
+### Customer Orders Detail (from getCustomerOrders)
+
+| Column | Source |
+|--------|--------|
+| Mã đơn | `order_code` |
+| SP | `product_name` |
+| Loại | `product_type` |
+| Số tiền | `total_amount` |
+| Status | Badge (color) |
+| Thời gian | `created_at` / `paid_at` / `delivered_at` |
 
 ---
 
-## 4. State Machine
+## 4. Acceptance Criteria
 
-```mermaid
-stateDiagram-v2
-    [*] --> NO_DATA: No orders yet
-    NO_DATA --> HAS_DATA: First completed order
-    HAS_DATA --> HAS_DATA: More orders
-```
-
----
-
-## 5. Responsive Breakpoints
-
-| Breakpoint | Thay đổi |
-|-----------|---------|
-| ≥ 1024px | 4 stat cards in row, full table |
-| 768px | 2 stat cards/row, truncate username |
-| ≤ 375px | 1 stat card/row, simplified table |
-
----
-
-## 6. Acceptance Criteria
-
-- [x] Customer list aggregated from completed orders
-- [x] Stat cards: total customers, revenue, avg order, repeat rate
-- [x] Sort by spending / orders / recency
-- [x] Customer detail with order history
-- [x] Empty state khi chưa có khách
+- [x] Customer list aggregated from orders (GROUP BY telegram_user_id)
+- [x] Sort by total_spent DESC
+- [x] total_spent counts only paid+delivered orders
+- [x] product_names: GROUP_CONCAT DISTINCT product names
+- [x] unique_products count
+- [x] delivered_count + cancelled_count separate
+- [x] Click customer → full orders history
+- [x] Orders include product_type + subscription_days

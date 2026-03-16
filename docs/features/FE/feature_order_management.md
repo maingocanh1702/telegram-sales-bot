@@ -8,7 +8,7 @@
 
 ## 1. Mô tả
 
-Admin xem, lọc, quản lý đơn hàng. Xem chi tiết, cancel đơn, manual fulfill cho invite/preorder. Export CSV.
+Admin xem đơn hàng, confirm thanh toán, cancel, manual fulfill cho invite/preorder, xem/gửi lại credentials, set subscription expiry.
 
 ---
 
@@ -16,36 +16,45 @@ Admin xem, lọc, quản lý đơn hàng. Xem chi tiết, cancel đơn, manual f
 
 ### UC-1: Xem danh sách đơn hàng
 
-1. Admin tab "Đơn hàng" → stat cards + table
-2. Filter: status, date range, search (payment code, username)
-3. Table: Mã TT, Khách, Sản phẩm, Số tiền, Trạng thái, Thời gian
+1. Admin tab "Đơn hàng" → stat cards + table (recent 100)
+2. Table: Mã đơn, Khách, SP, Số tiền, Trạng thái, product_type, Thời gian
 
-### UC-2: Xem chi tiết đơn
+### UC-2: Confirm thanh toán
 
-1. Click đơn hàng → modal chi tiết
-2. Thông tin: khách, SP, payment info, timeline, credential data (nếu completed)
+1. Admin click "Xác nhận TT" trên đơn pending
+2. Status → paid + auto-deliver (credential type)
+3. Bot send credentials to customer
+4. Nếu invite/preorder → status = paid, chờ admin mark-delivered
 
-### UC-3: Cancel đơn hàng
+### UC-3: Mark delivered (invite/preorder)
 
-1. Admin click "Hủy" → confirm modal
-2. Status → cancelled, stock restored (nếu credential)
+1. Đơn paid, type invite/preorder → nút "Đã giao"
+2. Click → status = delivered → bot thông báo khách:
+   - Invite: "📧 Invite đã được gửi đến email"
+   - Other: "Đơn hàng đã hoàn tất"
 
-### UC-4: Manual fulfill (invite/preorder)
+### UC-4: View & Resend credentials
 
-1. Đơn paid + invite/preorder → nút "Xác nhận đã giao"
-2. Admin click → update status → bot thông báo khách
+1. Click đơn delivered → xem credentials (data + labels theo credential_fields)
+2. "Gửi lại" → bot resend formatted message theo credential_fields schema
 
-### UC-5: Export CSV
+### UC-5: Set subscription expiry
 
-1. Admin click "Export" → download CSV theo filter hiện tại
+1. Click "Set hết hạn" → nhập số ngày
+2. subscription_expires_at = today + days
+
+### UC-6: Cancel đơn
+
+1. Click "Hủy" → status = cancelled (no stock restore needed — credentials not reserved upfront)
 
 ### Edge Cases
 
 | Case | Xử lý |
 |------|-------|
-| Đơn pending quá 10' | Auto-expired |
-| Cancel đơn completed | Reject — đã giao |
-| Thanh toán đúng, sai SL | Chỉ match exact payment_code |
+| Confirm đơn đã paid | 400 "Already confirmed" |
+| Mark-delivered đơn pending | 400 "Expected paid/delivering" |
+| Resend non-credential type | 400 "Resend only for credential-type" |
+| Credential stock hết khi confirm | "Delivery pending (stock issue)" |
 
 ---
 
@@ -55,62 +64,68 @@ Admin xem, lọc, quản lý đơn hàng. Xem chi tiết, cancel đơn, manual f
 
 | State | Hiển thị |
 |-------|---------|
-| **Loading** | Skeleton stat cards + table |
-| **Data** | Stats + filterable table |
-| **Empty** | "Chưa có đơn hàng nào." |
-
-### Stat Cards
-
-| Card | Value |
-|------|-------|
-| Tổng đơn | Count all |
-| Đang chờ | Count pending + paid |
-| Hoàn tất | Count completed |
-| Doanh thu | Sum completed (VNĐ) |
+| **Loading** | Skeleton |
+| **Data** | Table + stat cards (derived from data) |
+| **Empty** | "Chưa có đơn hàng nào" |
 
 ### Order Table
 
 | Column | Data |
 |--------|------|
-| 💳 Mã TT | `payment_code` |
-| 👤 Khách | `customer_username` |
-| 📦 SP | `product_name` |
-| 💰 Số tiền | `total_amount` (VNĐ) |
-| 🏷 Trạng thái | Status badge |
-| 🕐 Thời gian | `created_at` (relative) |
+| Mã đơn | `order_code` (= payment_code) |
+| 👤 Khách | `telegram_username` |
+| 📦 SP | `product_name` × `quantity` |
+| 💰 Tiền | `total_amount` (VNĐ) |
+| 🏷 Loại | `product_type` badge |
+| 📊 Status | Status badge (color) |
+| 🕐 Tạo | `created_at` |
 
 ### Status Badges
 
-| Status | Badge | Color |
+| Status | Label | Color |
 |--------|-------|-------|
-| pending_payment | ⏳ Chờ TT | Yellow |
-| paid | 💰 Đã TT | Blue |
-| completed | ✅ Hoàn tất | Green |
-| expired | ⏰ Hết hạn | Gray |
-| cancelled | ❌ Đã hủy | Red |
+| `pending` | ⏳ Chờ TT | Yellow |
+| `paid` | 💰 Đã TT | Blue |
+| `delivering` | 🚚 Đang giao | Purple |
+| `delivered` | ✅ Hoàn tất | Green |
+| `expired` | ⏰ Hết hạn | Gray |
+| `cancelled` | ❌ Đã hủy | Red |
+
+### Action Buttons (conditional)
+
+| Status | Actions |
+|--------|---------|
+| `pending` | [Xác nhận TT] [Hủy] |
+| `paid` (credential) | Auto-delivered |
+| `paid` (invite/preorder) | [Đã giao] [Hủy] |
+| `delivered` | [Xem credentials] [Gửi lại] [Set hết hạn] |
 
 ---
 
-## 4. State Machine (Order)
+## 4. State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending_payment: Customer tạo đơn
-    pending_payment --> paid: SePay webhook
-    pending_payment --> expired: Timeout (10')
-    paid --> completed: Auto-deliver / Manual fulfill
-    pending_payment --> cancelled: Admin cancel
+    [*] --> pending: Bot tạo đơn
+    pending --> paid: Admin confirm / SePay webhook
+    pending --> expired: Timer (expires_at)
+    pending --> cancelled: Admin cancel
+    paid --> delivered: Auto-deliver (credential) / Mark-delivered (invite)
     paid --> cancelled: Admin cancel
+    delivering --> delivered: Mark-delivered
+    delivered --> delivered: Resend / Set expiry
 ```
 
 ---
 
 ## 5. Acceptance Criteria
 
-- [x] Stat cards: total, pending, completed, revenue
-- [x] Filterable table: status, date range, search
-- [x] Order detail modal: full info + timeline
-- [x] Cancel order with stock restore
-- [x] Manual fulfill for invite/preorder
+- [x] Order list (recent 100)
+- [x] Confirm payment + auto-deliver credentials
+- [x] Mark delivered for invite/preorder
+- [x] View credentials with formatted labels
+- [x] Resend credentials to customer
+- [x] Set subscription expiry (days)
+- [x] Cancel order
 - [x] Status badges with correct colors
-- [x] Export CSV
+- [x] Conditional action buttons by status + product_type
