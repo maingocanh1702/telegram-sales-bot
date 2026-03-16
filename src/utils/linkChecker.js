@@ -403,11 +403,13 @@ async function checkViaScraperApi(url) {
         { label: 'render+geo', params: '&render=true&country_code=us', credits: 20, timeout: 35000 },
     ];
 
-    // Known SPA + Cloudflare sites → skip directly to render+geo (saves 11 credits)
+    // Known SPA + Cloudflare sites → skip basic tier (saves 1 credit)
     const isKnownSPA = /claude\.ai|anthropic\.com/.test(url);
     const tiers = isKnownSPA
-        ? allTiers.filter(t => t.label === 'render+geo')
+        ? allTiers.filter(t => t.label !== 'basic')
         : allTiers;
+
+    let lastResult = null;
 
     for (const tier of tiers) {
         try {
@@ -422,6 +424,7 @@ async function checkViaScraperApi(url) {
             if (resp.status === 200) {
                 const text = await resp.text();
                 const result = analyzeTextContent(url, 200, text);
+                lastResult = result;
 
                 // Definitive results — accept immediately (saves credits!)
                 const definitive = ['live', 'redeemed', 'dead', 'expired'];
@@ -441,11 +444,15 @@ async function checkViaScraperApi(url) {
 
         } catch (err) {
             console.warn(`[LinkChecker] ScraperAPI tier "${tier.label}" failed:`, err.message);
-            // Timeout on basic tier is expected, try render tier
             continue;
         }
     }
 
+    // All tiers exhausted — return last result if any, otherwise generic error
+    if (lastResult) {
+        console.log(`[LinkChecker] All tiers done, returning last result: ${lastResult.status}`);
+        return lastResult;
+    }
     return { url, status: 'cf_blocked', httpStatus: 403, detail: 'ScraperAPI: tất cả tiers thất bại' };
 }
 
