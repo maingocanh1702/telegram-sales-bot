@@ -193,6 +193,7 @@ async function initDatabase() {
         `ALTER TABLE discount_codes ADD COLUMN allowed_user_id TEXT`,
         `ALTER TABLE products ADD COLUMN is_featured INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN product_ids TEXT`,
+        `ALTER TABLE discount_codes ADD COLUMN is_new_user_only INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -506,6 +507,18 @@ function getUserStats(telegramUserId) {
     return { totalOrders: 0, totalSpent: 0, totalItems: 0 };
 }
 
+/**
+ * Check if user is a new user (0 completed orders)
+ */
+function isNewUser(telegramUserId) {
+    const result = db.exec(
+        `SELECT COUNT(*) FROM orders WHERE telegram_user_id = ? AND status IN ('paid','delivered')`,
+        [telegramUserId]
+    );
+    const count = result.length > 0 ? result[0].values[0][0] : 0;
+    return count === 0;
+}
+
 function updateOrderStatus(orderCode, status) {
     const extraFields = {};
     if (status === 'paid') extraFields.paid_at = new Date().toISOString();
@@ -700,6 +713,7 @@ module.exports = {
     getPendingOrderByCode,
     getUserOrders,
     getUserStats,
+    isNewUser,
     updateOrderStatus,
     getExpiredOrders,
     getRecentOrders,
@@ -853,8 +867,8 @@ function createDiscountCode(data) {
     }
 
     db.run(
-        `INSERT INTO discount_codes (code, type, value, product_id, product_ids, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, allowed_user_id, starts_at, expires_at, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO discount_codes (code, type, value, product_id, product_ids, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, allowed_user_id, starts_at, expires_at, is_active, is_new_user_only)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.code.toUpperCase().trim(),
             data.type || 'percent',
@@ -872,6 +886,7 @@ function createDiscountCode(data) {
             data.starts_at || null,
             data.expires_at || null,
             data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
+            data.is_new_user_only ? 1 : 0,
         ]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
@@ -1021,6 +1036,11 @@ function validateDiscountCode(code, userId, orderAmount, productId, quantity, un
     // Check allowed user restriction
     if (discount.allowed_user_id && String(discount.allowed_user_id) !== String(userId)) {
         return { valid: false, reason: 'Mã này chỉ dành cho một người dùng cụ thể.' };
+    }
+
+    // Check new-user-only restriction
+    if (discount.is_new_user_only && !isNewUser(userId)) {
+        return { valid: false, reason: 'Mã này chỉ dành cho khách hàng mới.' };
     }
 
     // Check product-specific discount (supports both product_id and product_ids)
