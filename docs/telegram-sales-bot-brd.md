@@ -66,6 +66,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 - **Áp dụng cho nhiều sản phẩm** (multi-product) — chọn tất cả, 1 SP, hoặc nhiều SP
 - Ẩn/hiện, ngày bắt đầu/kết thúc
 - UI dạng chip/pill tag để chọn SP
+- **Mã khách mới** (`is_new_user_only`) — chỉ user chưa mua thành công đơn nào
 
 #### 🔗 Credential Link Checker
 - Kiểm tra trạng thái link credential hàng loạt (batch ≤100 URLs)
@@ -144,6 +145,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | BR-12 | Pre-check free | Quét DB + cache miễn phí trước khi dùng ScraperAPI |
 | BR-13 | Cache TTL | redeemed=∞, dead/expired=24h, live=15min, unknown=5min |
 | BR-14 | Cache persistence | Kết quả check lưu SQLite, tồn tại qua restart/deploy |
+| BR-15 | New user discount | Mã `is_new_user_only` chỉ hiện và dùng được cho user 0 đơn thành công |
 
 ---
 
