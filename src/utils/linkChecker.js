@@ -388,18 +388,26 @@ async function checkGenericUrl(url) {
 
 /**
  * ScraperAPI fallback — tiered approach to minimize credit usage:
- * Tier 1: Basic proxy (1 credit) — often enough for API redirects
+ * Tier 1: Basic proxy (1 credit) — for simple sites / API redirects
  * Tier 2: JS rendering (10 credits) — for pages requiring JS
- * Tier 3: JS rendering + US geo (20 credits) — last resort
+ * Tier 3: JS rendering + US geo (20 credits) — for CF-protected SPAs
+ *
+ * Known SPAs (claude.ai) skip directly to tier 3 to avoid wasting credits
  */
 async function checkViaScraperApi(url) {
     if (!SCRAPER_API_KEY) return null;
 
-    const tiers = [
+    const allTiers = [
         { label: 'basic', params: '', credits: 1, timeout: 15000 },
         { label: 'render', params: '&render=true', credits: 10, timeout: 30000 },
         { label: 'render+geo', params: '&render=true&country_code=us', credits: 20, timeout: 35000 },
     ];
+
+    // Known SPA + Cloudflare sites → skip directly to render+geo (saves 11 credits)
+    const isKnownSPA = /claude\.ai|anthropic\.com/.test(url);
+    const tiers = isKnownSPA
+        ? allTiers.filter(t => t.label === 'render+geo')
+        : allTiers;
 
     for (const tier of tiers) {
         try {
