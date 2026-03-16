@@ -1,6 +1,6 @@
 # CloudX Shop — Product Requirements Document (PRD)
 
-> **Phiên bản:** v1.0.0 | **Ngày:** 2026-03-16 | **Tác giả:** CloudX Team
+> **Phiên bản:** v2.1.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
 
 ---
 
@@ -27,18 +27,20 @@
 | Thuộc tính | Chi tiết |
 | ---------- | -------- |
 | Product types | `credential` (tài khoản), `invite` (lời mời), `preorder` (đặt trước) |
-| Categories | Nhóm sản phẩm (emoji + tên), sortable |
+| Categories | Nhóm sản phẩm (emoji + tên), sortable drag & drop |
 | Featured | Sản phẩm nổi bật hiển thị đầu danh sách |
 | Stock | Auto-count từ credentials available |
 | Credential fields | Custom fields (key, label, icon) per product |
 | Customer fields | Thông tin cần thu thập (email, password...) |
 | Subscription | `subscription_days` → tracking hạn sử dụng |
+| Max per user | `max_per_user` — giới hạn số lượng mua/user/SP |
+| Reordering | Drag & drop thay đổi thứ tự hiển thị SP trong danh mục |
 
 **User flow:**
 
-```
+```text
 /products → Danh sách (featured + categories)
-  → Click category → Sản phẩm trong category
+  → Click category → Sản phẩm trong category (giá + stock)
     → Click sản phẩm → Chi tiết (giá, stock, mô tả, note)
       → [Mua ngay] → Chọn số lượng
 ```
@@ -75,7 +77,7 @@
 
 **Webhook flow:**
 
-```
+```text
 SePay POST → Extract order code from content
   → Find pending order → Verify amount
   → Update status → Deliver credentials
@@ -105,17 +107,19 @@ SePay POST → Extract order code from content
 | Thuộc tính | Chi tiết |
 | ---------- | -------- |
 | Type | `percent` (%) hoặc `fixed` (VNĐ) |
-| Scope | Tất cả SP hoặc SP cụ thể |
+| Scope | Tất cả SP, 1 SP cụ thể, hoặc **nhiều SP** (multi-product) |
 | Limits | Tổng lượt dùng, lượt/người, đơn tối thiểu, giảm tối đa |
 | Restrictions | `required_group_id` (group Telegram), `allowed_user_id` (user cụ thể) |
 | Visibility | `is_hidden` — ẩn khỏi /discount |
 | Schedule | `starts_at`, `expires_at` |
 | Discount qty | `max_discount_qty` — số SP được giảm trong 1 đơn |
 
+**Multi-product:** Mã giảm giá có thể áp dụng cho nhiều SP đã chọn thông qua `product_ids` (JSON array). Admin UI dùng chip/pill selector để chọn SP.
+
 **Validation chain:**
 
-```
-validateDiscountCode() → check active, dates, uses, product, user, min amount
+```text
+validateDiscountCode() → check active, dates, uses, product/products, user, min amount
   → check group membership (getChatMember API)
   → calculate discount amount
 ```
@@ -127,11 +131,11 @@ validateDiscountCode() → check active, dates, uses, product, user, min amount
 | Tab | Chức năng |
 | --- | --------- |
 | 📊 Dashboard | Thống kê: doanh thu, đơn hàng, top SP |
-| 📦 Sản phẩm | CRUD products + credentials + categories |
+| 📦 Sản phẩm | CRUD products + credentials + categories + reorder |
 | 📋 Đơn hàng | Xác nhận, hủy, giao thủ công, gửi lại, set expiry |
 | 👥 Khách hàng | Danh sách, lịch sử mua, thống kê |
 | 🏦 Ngân hàng | Multi-bank management |
-| 🎟 Mã giảm giá | CRUD discounts + restriction badges |
+| 🎟 Mã giảm giá | CRUD discounts + multi-product chip selector |
 | ⚙️ Cài đặt | Cấu hình hệ thống |
 
 **Authentication:** API key (`ADMIN_API_KEY` env var).
@@ -165,14 +169,86 @@ validateDiscountCode() → check active, dates, uses, product, user, min amount
 | Subscription sắp hết | Customer | Telegram |
 | Đơn hết hạn | Customer | Telegram |
 
+### F-10: Credential Link Checker _(v2.1)_
+
+**Mô tả:** Kiểm tra trạng thái link credential hàng loạt.
+
+| Thuộc tính | Chi tiết |
+| ---------- | -------- |
+| Batch size | Tối đa 30 URLs/request |
+| Strategies | Direct API → redirect analysis → content analysis → ScraperAPI |
+| ScraperAPI tiers | basic (1 credit) → render (10) → render+geo (20) |
+| Statuses | `live`, `redeemed`, `expired`, `dead`, `cf_blocked`, `unknown` |
+| Cache | Smart TTL: redeemed=∞, dead/expired=24h, live=15min |
+| UI | Summary badges, per-link detail, 💾 cache indicator, ⚡ force re-check |
+
+**ScraperAPI tiered approach:**
+
+```text
+Tier 1: Basic proxy (1 credit) → works for API/redirect-based checks
+  ↓ if CF blocked
+Tier 2: JS rendering (10 credits) → renders full page
+  ↓ if still CF blocked
+Tier 3: JS rendering + US geo (20 credits) → last resort
+```
+
 ---
 
-## 3. Release Plan
+## 3. Technical Architecture
+
+### 3.1 Stack
+
+| Layer | Technology |
+| ----- | ---------- |
+| Runtime | Node.js ≥18 |
+| Bot | node-telegram-bot-api (webhooks) |
+| Database | SQLite via sql.js (in-memory + file sync) |
+| Web Server | Express.js |
+| Hosting | Railway (volume mount for DB) |
+| Payment | VietQR URL + SePay webhook |
+| CF Bypass | ScraperAPI (tiered credits) |
+
+### 3.2 File Structure
+
+```text
+src/
+├── bot.js                # Bot initialization + webhook setup
+├── config.js             # Environment validation
+├── database.js           # SQLite schema + CRUD operations
+├── scheduler.js          # Periodic tasks (expiry, subscription)
+├── seed.js               # Development seed data
+├── handlers/
+│   ├── adminAPI.js       # Express routes for admin panel
+│   ├── adminHandler.js   # Telegram admin commands
+│   ├── callbacks.js      # Inline keyboard callback router
+│   ├── deliveryHandler.js
+│   ├── discountHandler.js
+│   ├── emailHandler.js
+│   ├── helpHandler.js
+│   ├── menuHandler.js
+│   ├── orderHandler.js
+│   ├── productHandler.js
+│   ├── profileHandler.js
+│   ├── quantityHandler.js
+│   └── webhookHandler.js
+└── utils/
+    ├── linkChecker.js    # Multi-strategy URL checker + cache
+    ├── orderExpiry.js    # Order auto-expiry logic
+    └── vietqr.js         # VietQR URL generation
+public/
+└── admin.html            # Single-page admin panel
+```
+
+---
+
+## 4. Release Plan
 
 | Version | Features | Status |
 | ------- | -------- | ------ |
 | v1.0 | Product catalog, order flow, payment, credential delivery | ✅ Done |
-| v1.1 | Categories, featured products, discount codes | ✅ Done |
+| v1.1 | Categories, featured products, basic discount codes | ✅ Done |
 | v1.2 | Invite/preorder types, subscription tracking | ✅ Done |
 | v1.3 | Multi-bank, resend credentials, group discounts | ✅ Done |
-| v2.0 | CTV management, analytics dashboard | 🚧 In progress |
+| v2.0 | Rebuild codebase, /profile, /help, /huongdan, config validation | ✅ Done |
+| v2.1 | Multi-product discounts, credential link checker, ScraperAPI, cache | ✅ Done |
+| v2.2 | CTV management, analytics dashboard | 🚧 In progress |
