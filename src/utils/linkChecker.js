@@ -4,6 +4,7 @@
  *
  * Supports:
  * - Claude.ai gift/redeem links (via API + page analysis + ScraperAPI)
+ * - LinkedIn Premium redeem/coupon links (via redirect analysis + ScraperAPI)
  * - Generic URLs (via HTTP status check + ScraperAPI fallback)
  */
 
@@ -37,6 +38,273 @@ function extractClaudeCode(url) {
             return urlObj.searchParams.get('code');
         }
     } catch { }
+    return null;
+}
+
+/**
+ * Detect LinkedIn redeem/coupon URL
+ * Supports:
+ * - https://www.linkedin.com/premium/redeem-v3/?coupon=ABC123
+ * - https://www.linkedin.com/premium/redeem/?coupon=ABC123
+ * - https://www.linkedin.com/uas/login?session_redirect=...premium/redeem...
+ */
+function isLinkedInRedeemUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const host = urlObj.hostname.replace('www.', '');
+        if (host !== 'linkedin.com') return false;
+
+        const path = urlObj.pathname + urlObj.search;
+        // Direct redeem URL
+        if (path.includes('/premium/redeem')) return true;
+        // Login redirect that points to a redeem URL
+        if (path.includes('/uas/login')) {
+            const redirect = urlObj.searchParams.get('session_redirect') || '';
+            if (redirect.includes('/premium/redeem')) return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Extract LinkedIn coupon code from URL
+ */
+function extractLinkedInCoupon(url) {
+    try {
+        const urlObj = new URL(url);
+
+        // Direct redeem URL: coupon param
+        let coupon = urlObj.searchParams.get('coupon');
+        if (coupon) return coupon;
+
+        // Login redirect: parse session_redirect for coupon
+        const redirect = urlObj.searchParams.get('session_redirect') || '';
+        if (redirect) {
+            try {
+                // session_redirect can be a relative or absolute URL
+                const rUrl = new URL(redirect, 'https://www.linkedin.com');
+                coupon = rUrl.searchParams.get('coupon');
+                if (coupon) return coupon;
+            } catch { }
+            // Fallback: regex extract
+            const m = redirect.match(/[?&]coupon=([^&]+)/);
+            if (m) return m[1];
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Check LinkedIn Premium redeem/coupon link
+ *
+ * LinkedIn always redirects unauthenticated requests to /uas/login
+ * Strategy:
+ * 1. Redirect analysis — if redirects to login with session_redirect containing
+ *    /premium/redeem → coupon link exists (format is valid)
+ * 2. ScraperAPI with JS rendering — render the actual page and analyze content
+ * 3. Keyword analysis on rendered page
+ */
+async function checkLinkedInRedeem(url) {
+    const coupon = extractLinkedInCoupon(url);
+
+    // Normalize URL: if it's a /uas/login redirect, extract the actual redeem URL
+    let redeemUrl = url;
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.pathname.includes('/uas/login')) {
+            const redirect = urlObj.searchParams.get('session_redirect');
+            if (redirect) {
+                redeemUrl = redirect.startsWith('http')
+                    ? redirect
+                    : `https://www.linkedin.com${redirect}`;
+            }
+        }
+    } catch { }
+
+    // Strategy 1: Redirect analysis (no-follow)
+    try {
+        const resp = await fetch(redeemUrl, {
+            method: 'GET',
+            headers: BROWSER_HEADERS,
+            redirect: 'manual',
+            signal: AbortSignal.timeout(10000),
+        });
+
+        const status = resp.status;
+        const location = resp.headers.get('location') || '';
+
+        // 302/303 → login page = LinkedIn acknowledged the URL (coupon format valid)
+        if (status >= 300 && status < 400 && location.includes('/uas/login')) {
+            // LinkedIn redirects ALL unauthenticated users to login
+            // This means the coupon URL format is valid, but we can't determine
+            // if it's been redeemed without rendering the page
+            console.log(`[LinkChecker] LinkedIn redirected to login (expected). Trying ScraperAPI...`);
+        }
+
+        // 404 = coupon doesn't exist
+        if (status === 404) {
+            return { url, status: 'dead', httpStatus: 404, detail: 'Coupon không tồn tại (404)' };
+        }
+
+        // 200 without redirect (rare for LinkedIn) — analyze content
+        if (status === 200) {
+            const text = await resp.text();
+            const result = analyzeLinkedInContent(url, text);
+            if (result) return result;
+        }
+    } catch (err) {
+        console.warn(`[LinkChecker] LinkedIn redirect check failed:`, err.message);
+    }
+
+    // Strategy 2: ScraperAPI with JS rendering
+    if (SCRAPER_API_KEY) {
+        const scraperResult = await checkLinkedInViaScraperApi(url, redeemUrl);
+        if (scraperResult) return scraperResult;
+    }
+
+    // Can't determine — but we know it's a valid LinkedIn URL format
+    return {
+        url,
+        status: 'unknown',
+        httpStatus: 302,
+        detail: coupon
+            ? `LinkedIn coupon "${coupon}" — cần đăng nhập LinkedIn để kiểm tra. ScraperAPI ${SCRAPER_API_KEY ? 'không thể render' : 'chưa cấu hình'}`
+            : 'LinkedIn premium link — cần đăng nhập để kiểm tra',
+    };
+}
+
+/**
+ * ScraperAPI specifically for LinkedIn — needs render=true + premium proxy
+ */
+async function checkLinkedInViaScraperApi(originalUrl, redeemUrl) {
+    if (!SCRAPER_API_KEY) return null;
+
+    const tiers = [
+        { label: 'render', params: '&render=true', credits: 10, timeout: 30000 },
+        { label: 'render+geo', params: '&render=true&country_code=us', credits: 20, timeout: 35000 },
+        { label: 'premium', params: '&render=true&premium=true', credits: 25, timeout: 40000 },
+    ];
+
+    for (const tier of tiers) {
+        try {
+            console.log(`[LinkChecker] LinkedIn ScraperAPI tier "${tier.label}" (${tier.credits} cr) for ${redeemUrl}`);
+            const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(redeemUrl)}${tier.params}`;
+
+            const resp = await fetch(scraperUrl, {
+                method: 'GET',
+                signal: AbortSignal.timeout(tier.timeout),
+            });
+
+            if (resp.status === 200) {
+                const text = await resp.text();
+                const result = analyzeLinkedInContent(originalUrl, text);
+                if (result && result.status !== 'unknown') {
+                    console.log(`[LinkChecker] LinkedIn tier "${tier.label}" definitive: ${result.status}`);
+                    return result;
+                }
+                // Also try generic analysis as fallback
+                const genericResult = analyzeTextContent(originalUrl, 200, text);
+                if (genericResult && ['live', 'redeemed', 'dead', 'expired'].includes(genericResult.status)) {
+                    return genericResult;
+                }
+                console.log(`[LinkChecker] LinkedIn tier "${tier.label}" → unknown, trying next...`);
+                continue;
+            }
+
+            if (resp.status === 403 || resp.status === 429) {
+                return { url: originalUrl, status: 'error', httpStatus: resp.status, detail: `ScraperAPI error: HTTP ${resp.status}` };
+            }
+        } catch (err) {
+            console.warn(`[LinkChecker] LinkedIn ScraperAPI tier "${tier.label}" failed:`, err.message);
+            continue;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Analyze LinkedIn page content for redeem status
+ */
+function analyzeLinkedInContent(url, text) {
+    const lower = text.toLowerCase();
+
+    // Cloudflare / auth wall
+    if (lower.includes('cf-browser-verification') || lower.includes('turnstile')) {
+        return null; // Try next tier
+    }
+
+    // Already redeemed indicators
+    const redeemedPatterns = [
+        'already been redeemed', 'already redeemed', 'coupon has been used',
+        'code has been used', 'previously redeemed', 'no longer available',
+        'this coupon is no longer valid', 'coupon is expired',
+        'this offer has expired', 'offer is no longer available',
+        'đã được sử dụng', 'không còn hiệu lực',
+    ];
+    for (const pat of redeemedPatterns) {
+        if (lower.includes(pat)) {
+            return { url, status: 'redeemed', httpStatus: 200, detail: 'LinkedIn coupon đã được sử dụng' };
+        }
+    }
+
+    // Expired
+    if (lower.includes('coupon expired') || lower.includes('offer expired') ||
+        lower.includes('promotion has ended') || lower.includes('this promotion ended')) {
+        return { url, status: 'expired', httpStatus: 200, detail: 'LinkedIn coupon đã hết hạn' };
+    }
+
+    // Invalid / not found
+    const deadPatterns = [
+        'invalid coupon', 'coupon not found', 'invalid code',
+        'we couldn\'t find', 'this page doesn\'t exist',
+        'page not found', 'không tìm thấy',
+    ];
+    for (const pat of deadPatterns) {
+        if (lower.includes(pat)) {
+            return { url, status: 'dead', httpStatus: 200, detail: 'LinkedIn coupon không hợp lệ' };
+        }
+    }
+
+    // Valid / live indicators
+    const livePatterns = [
+        'redeem your', 'activate premium', 'start your premium',
+        'claim your', 'get premium', 'try premium',
+        'linkedin premium', 'free month', 'free trial',
+        'redeem coupon', 'redeem offer', 'redeem this',
+        'enjoy premium', 'premium features',
+        'activate now', 'start now', 'claim now',
+        'sign in to redeem', 'log in to redeem', 'sign in to claim',
+    ];
+    for (const pat of livePatterns) {
+        if (lower.includes(pat)) {
+            return { url, status: 'live', httpStatus: 200, detail: 'LinkedIn coupon còn hiệu lực' };
+        }
+    }
+
+    // LinkedIn login page with session_redirect to premium/redeem
+    // This is the most common case: page rendered but shows login form
+    if (lower.includes('session_password') && lower.includes('session_key')) {
+        // It's a login form — LinkedIn requires auth to redeem
+        if (lower.includes('premium') || lower.includes('redeem') || lower.includes('coupon')) {
+            return {
+                url,
+                status: 'unknown',
+                httpStatus: 200,
+                detail: 'LinkedIn yêu cầu đăng nhập — không thể kiểm tra tự động. Cần mở link thủ công',
+            };
+        }
+    }
+
+    // Page has LinkedIn branding + premium content but no clear status
+    if (text.length > 1000 && lower.includes('linkedin')) {
+        console.log(`[LinkChecker] LinkedIn page detected but no clear status. Preview: ${text.substring(0, 500)}`);
+    }
+
     return null;
 }
 
@@ -404,7 +672,7 @@ async function checkViaScraperApi(url) {
     ];
 
     // Known SPA + Cloudflare sites → skip basic tier (saves 1 credit)
-    const isKnownSPA = /claude\.ai|anthropic\.com/.test(url);
+    const isKnownSPA = /claude\.ai|anthropic\.com|linkedin\.com/.test(url);
     const tiers = isKnownSPA
         ? allTiers.filter(t => t.label !== 'basic')
         : allTiers;
@@ -558,6 +826,8 @@ async function checkLink(url, forceRefresh = false) {
     const claudeCode = extractClaudeCode(url);
     if (claudeCode) {
         result = await checkClaudeGift(url, claudeCode);
+    } else if (isLinkedInRedeemUrl(url)) {
+        result = await checkLinkedInRedeem(url);
     } else {
         result = await checkGenericUrl(url);
     }
