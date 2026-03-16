@@ -716,7 +716,7 @@
           <div style="display:flex;align-items:center;gap:8px">
             <div style="position:relative">
               <span class="material-symbols-rounded" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--text-muted);pointer-events:none">search</span>
-              <input id="credSearchInput" type="text" placeholder="Tìm credential theo mã đơn..." 
+              <input id="credSearchInput" type="text" placeholder="Mã đơn hoặc nội dung credential..." 
                 style="padding:9px 12px 9px 36px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-size:13px;width:260px;transition:border-color .2s"
                 onkeydown="if(event.key==='Enter')searchCredentialByOrderCode()">
             </div>
@@ -1728,16 +1728,169 @@ Số Lượng Đang Hiện Có 10"
       });
     }
 
-    function searchCredentialByOrderCode() {
+    async function searchCredentialByOrderCode() {
       const input = document.getElementById('credSearchInput');
-      const code = input.value.trim();
-      if (!code) {
-        toast('Nhập mã đơn hàng để tra cứu', 'error');
+      const query = input.value.trim();
+      if (!query) {
+        toast('Nhập mã đơn hoặc nội dung credential để tra cứu', 'error');
         input.focus();
         return;
       }
-      viewOrderCredentials(code);
-      input.value = '';
+
+      // Show modal with loading state
+      document.getElementById('orderCredModal').classList.add('active');
+      document.getElementById('orderCredModalTitle').textContent = `🔑 Tra cứu: "${query.substring(0, 40)}${query.length > 40 ? '...' : ''}"`;
+      document.getElementById('orderCredModalBody').innerHTML = '<p style="text-align:center;padding:20px">⏳ Đang tìm kiếm...</p>';
+
+      try {
+        // Try order code lookup first
+        const orderRes = await fetch(API + `/orders/${encodeURIComponent(query)}/credentials`, {
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        });
+        if (orderRes.ok) {
+          const data = await orderRes.json();
+          input.value = '';
+          // Reuse existing render logic
+          renderOrderCredModal(data, query);
+          return;
+        }
+
+        // Fallback: search by credential content
+        const searchRes = await apiFetch(`/credentials/search?q=${encodeURIComponent(query)}`);
+        input.value = '';
+
+        if (!searchRes.results || searchRes.results.length === 0) {
+          document.getElementById('orderCredModalBody').innerHTML = `
+            <div class="empty-state" style="padding:24px">
+              <span class="material-symbols-rounded">search_off</span>
+              <p>Không tìm thấy credential nào khớp</p>
+              <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Thử tìm bằng mã đơn hàng hoặc nội dung credential (email, username, link...)</p>
+            </div>`;
+          return;
+        }
+
+        // Render search results
+        let html = `<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Tìm thấy <strong>${searchRes.results.length}</strong> credential khớp</p>`;
+
+        for (const r of searchRes.results) {
+          const cred = r.credential;
+          const order = r.order;
+          const product = r.product;
+          const fields = product.credential_fields || [];
+          const fieldMap = {};
+          fields.forEach(f => { fieldMap[f.key] = f; });
+
+          // Card per result
+          html += `<div style="background:var(--bg-main);border-radius:8px;padding:14px;margin-bottom:10px;border:1px solid var(--border)">`;
+
+          // Order info row
+          if (order) {
+            const statusMap = { pending: '⏳', paid: '💰', delivered: '✅', cancelled: '❌', expired: '⏰' };
+            html += `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;align-items:center">`;
+            html += `<span>${statusMap[order.status] || ''} <strong>${order.order_code}</strong></span>`;
+            html += `<span>📦 ${product.name || 'N/A'}</span>`;
+            html += `<span>👤 @${order.telegram_username || 'N/A'}</span>`;
+            if (order.customer_email) html += `<span>📧 ${order.customer_email}</span>`;
+            html += `<span class="money" style="font-size:12px">${formatMoney(order.total_amount)}</span>`;
+            html += `</div>`;
+          } else {
+            html += `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">📦 ${product.name || 'N/A'} · <em>Chưa bán</em></div>`;
+          }
+
+          // Credential data
+          html += `<div style="display:flex;gap:8px;flex-wrap:wrap">`;
+          for (const [key, val] of Object.entries(cred.data)) {
+            const field = fieldMap[key];
+            const label = field ? `${field.icon || ''} ${field.label}` : key;
+            const strVal = String(val || '');
+            const safeVal = strVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            html += `<div style="flex:1;min-width:150px"><span style="font-size:11px;color:var(--text-muted)">${label}</span><br>`;
+            html += `<code style="cursor:pointer;word-break:break-all;padding:3px 6px;background:rgba(255,255,255,0.06);border-radius:4px;font-size:12px;display:inline-block;margin-top:2px" data-copy="${safeVal}" onclick="copyCredVal(this)" title="Click để copy">${safeVal}</code></div>`;
+          }
+          html += `</div>`;
+          html += `</div>`;
+        }
+
+        document.getElementById('orderCredModalBody').innerHTML = html;
+      } catch (err) {
+        document.getElementById('orderCredModalBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${err.message}</p>`;
+      }
+    }
+
+    // Render order credentials modal (extracted for reuse)
+    function renderOrderCredModal(res, code) {
+      const { order, credentialFields, credentials } = res;
+      document.getElementById('orderCredModalTitle').textContent = `🔑 Tài khoản — #${order.order_code || code}`;
+
+      if (credentials.length === 0) {
+        document.getElementById('orderCredModalBody').innerHTML = `
+          <div class="empty-state" style="padding:24px">
+            <span class="material-symbols-rounded">key_off</span>
+            <p>Chưa có tài khoản nào được giao cho đơn này</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:4px">
+              ${order.status === 'paid' ? 'Đơn đã thanh toán nhưng chưa giao tài khoản' : 'Có thể sản phẩm thuộc loại invite/preorder'}
+            </p>
+          </div>`;
+        return;
+      }
+
+      // Header info
+      let html = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-main);border-radius:8px;font-size:13px">`;
+      html += `<div>📦 <strong>${order.product_name}</strong></div>`;
+      html += `<div>👤 @${order.telegram_username || 'N/A'}</div>`;
+      if (order.customer_email) html += `<div>📧 ${order.customer_email}</div>`;
+      if (order.delivered_at) html += `<div>📬 ${order.delivered_at.replace('T', ' ').substring(0, 16)}</div>`;
+      html += `</div>`;
+
+      // Detect actual keys from credential data
+      const allDataKeys = new Set();
+      const parsedCreds = credentials.map(c => {
+        let data = c.data;
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch { data = { value: data }; }
+        }
+        if (Array.isArray(data)) { data = { value: JSON.stringify(data) }; }
+        if (typeof data !== 'object' || data === null) { data = { value: String(data) }; }
+        Object.keys(data).forEach(k => allDataKeys.add(k));
+        return { ...c, parsedData: data };
+      });
+
+      // Build columns
+      const columns = [];
+      const fieldMap = {};
+      (credentialFields || []).forEach(f => { fieldMap[f.key] = f; });
+      for (const key of allDataKeys) {
+        const field = fieldMap[key];
+        columns.push({
+          key,
+          label: field ? `${field.icon || ''} ${field.label}` : key.charAt(0).toUpperCase() + key.slice(1),
+        });
+      }
+      if (columns.length === 0) { columns.push({ key: '_raw', label: 'Dữ liệu' }); }
+
+      // Credentials table
+      html += '<table style="width:100%"><tr><th style="width:40px">#</th>';
+      columns.forEach(col => { html += `<th>${col.label}</th>`; });
+      html += '</tr>';
+
+      parsedCreds.forEach((c, i) => {
+        html += `<tr><td>${i + 1}</td>`;
+        columns.forEach(col => {
+          let val = col.key === '_raw' ? JSON.stringify(c.parsedData) : c.parsedData[col.key];
+          if (val === undefined || val === null) val = '';
+          const strVal = String(val);
+          if (strVal) {
+            const safeVal = strVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            html += `<td><code style="cursor:pointer;word-break:break-all;padding:4px 8px;background:rgba(255,255,255,0.06);border-radius:4px;display:inline-block" data-copy="${safeVal}" onclick="copyCredVal(this)" title="Click để copy">${safeVal}</code></td>`;
+          } else {
+            html += '<td><span style="color:var(--text-muted)">—</span></td>';
+          }
+        });
+        html += '</tr>';
+      });
+      html += '</table>';
+
+      document.getElementById('orderCredModalBody').innerHTML = html;
     }
 
     async function viewOrderCredentials(code) {
@@ -1747,78 +1900,7 @@ Số Lượng Đang Hiện Có 10"
 
       try {
         const res = await apiFetch(`/orders/${code}/credentials`);
-        const { order, credentialFields, credentials } = res;
-
-        if (credentials.length === 0) {
-          document.getElementById('orderCredModalBody').innerHTML = `
-            <div class="empty-state" style="padding:24px">
-              <span class="material-symbols-rounded">key_off</span>
-              <p>Chưa có tài khoản nào được giao cho đơn này</p>
-              <p style="font-size:12px;color:var(--text-muted);margin-top:4px">
-                ${order.status === 'paid' ? 'Đơn đã thanh toán nhưng chưa giao tài khoản' : 'Có thể sản phẩm thuộc loại invite/preorder'}
-              </p>
-            </div>`;
-          return;
-        }
-
-        // Header info
-        let html = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-main);border-radius:8px;font-size:13px">`;
-        html += `<div>📦 <strong>${order.product_name}</strong></div>`;
-        html += `<div>👤 @${order.telegram_username || 'N/A'}</div>`;
-        if (order.customer_email) html += `<div>📧 ${order.customer_email}</div>`;
-        if (order.delivered_at) html += `<div>📬 ${order.delivered_at.replace('T', ' ').substring(0, 16)}</div>`;
-        html += `</div>`;
-
-        // Detect actual keys from credential data
-        const allDataKeys = new Set();
-        const parsedCreds = credentials.map(c => {
-          let data = c.data;
-          if (typeof data === 'string') {
-            try { data = JSON.parse(data); } catch { data = { value: data }; }
-          }
-          if (Array.isArray(data)) { data = { value: JSON.stringify(data) }; }
-          if (typeof data !== 'object' || data === null) { data = { value: String(data) }; }
-          Object.keys(data).forEach(k => allDataKeys.add(k));
-          return { ...c, parsedData: data };
-        });
-
-        // Build columns from actual data keys with product field labels
-        const columns = [];
-        const fieldMap = {};
-        (credentialFields || []).forEach(f => { fieldMap[f.key] = f; });
-        for (const key of allDataKeys) {
-          const field = fieldMap[key];
-          columns.push({
-            key,
-            label: field ? `${field.icon || ''} ${field.label}` : key.charAt(0).toUpperCase() + key.slice(1),
-          });
-        }
-        if (columns.length === 0) { columns.push({ key: '_raw', label: 'Dữ liệu' }); }
-
-        // Credentials table
-        html += '<table style="width:100%"><tr><th style="width:40px">#</th>';
-        columns.forEach(col => { html += `<th>${col.label}</th>`; });
-        html += '</tr>';
-
-        parsedCreds.forEach((c, i) => {
-          html += `<tr><td>${i + 1}</td>`;
-          columns.forEach(col => {
-            let val = col.key === '_raw' ? JSON.stringify(c.parsedData) : c.parsedData[col.key];
-            if (val === undefined || val === null) val = '';
-            const strVal = String(val);
-            if (strVal) {
-              const safeVal = strVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-              html += `<td><code style="cursor:pointer;word-break:break-all;padding:4px 8px;background:rgba(255,255,255,0.06);border-radius:4px;display:inline-block" data-copy="${safeVal}" onclick="copyCredVal(this)" title="Click để copy">${safeVal}</code></td>`;
-            } else {
-              html += '<td><span style="color:var(--text-muted)">—</span></td>';
-            }
-          });
-          html += '</tr>';
-        });
-        html += '</table>';
-        html += `<p style="font-size:11px;color:var(--text-muted);margin-top:8px">💡 Click vào giá trị để copy</p>`;
-
-        document.getElementById('orderCredModalBody').innerHTML = html;
+        renderOrderCredModal(res, code);
       } catch (e) {
         document.getElementById('orderCredModalBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
       }
