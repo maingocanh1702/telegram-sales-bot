@@ -431,7 +431,7 @@ function setupAdminAPI(app, bot) {
                                 } else if (status === 404) {
                                     resolve({ url, status: 'dead', httpStatus: 404, detail: 'Link không tồn tại (404)' });
                                 } else if (status === 403) {
-                                    resolve({ url, status: 'blocked', httpStatus: 403, detail: 'Bị chặn truy cập (403)' });
+                                    resolve({ url, status: 'cf_blocked', httpStatus: 403, detail: 'Cloudflare anti-bot chặn (cần mở thủ công)' });
                                 } else {
                                     resolve({ url, status: 'unknown', httpStatus: status, detail: `HTTP ${status}` });
                                 }
