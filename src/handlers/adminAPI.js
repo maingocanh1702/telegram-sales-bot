@@ -353,21 +353,87 @@ function setupAdminAPI(app, bot) {
         }
     });
 
-    // Check if credential links are still alive
+    // Check credential links: Phase 1 = DB duplicate check (free), Phase 2 = validity check (ScraperAPI)
     app.post('/api/admin/credentials/check-links', async (req, res) => {
         try {
-            const { urls, forceRefresh } = req.body;
+            const { urls, forceRefresh, skipValidity } = req.body;
             if (!urls || !Array.isArray(urls) || urls.length === 0) {
                 return res.status(400).json({ error: true, message: 'urls array required', code: 'VALIDATION_ERROR' });
             }
 
-            // Limit to 30 URLs per request
             const toCheck = urls.slice(0, 30);
-            const { checkLinks, getCacheStats } = require('../utils/linkChecker');
-            const results = await checkLinks(toCheck, 5, !!forceRefresh);
 
-            const cachedCount = results.filter(r => r.fromCache).length;
-            res.json({ results, cachedCount, cacheStats: getCacheStats() });
+            // Phase 1: DB duplicate check (free, instant)
+            const d = db.getDb();
+            const allCreds = [];
+            const stmt = d.prepare('SELECT id, product_id, data, is_sold FROM credentials');
+            while (stmt.step()) allCreds.push(stmt.getAsObject());
+            stmt.free();
+
+            // Build a lookup: URL → credential info
+            const dbUrlMap = {};
+            allCreds.forEach(c => {
+                try {
+                    const data = JSON.parse(c.data || '{}');
+                    for (const val of Object.values(data)) {
+                        const strVal = String(val || '').trim();
+                        if (/^https?:\/\/.+/i.test(strVal)) {
+                            if (!dbUrlMap[strVal]) dbUrlMap[strVal] = [];
+                            dbUrlMap[strVal].push({ credId: c.id, productId: c.product_id, isSold: !!c.is_sold });
+                        }
+                    }
+                } catch {}
+            });
+
+            // Mark each URL as duplicate or not
+            const urlsForValidity = [];
+            const dbResults = [];
+            toCheck.forEach(url => {
+                const matches = dbUrlMap[url];
+                if (matches && matches.length > 0) {
+                    const sold = matches.some(m => m.isSold);
+                    dbResults.push({
+                        url, inDb: true,
+                        status: sold ? 'in_db_sold' : 'in_db_available',
+                        detail: sold ? 'Đã có trong kho (đã giao)' : 'Đã có trong kho (chưa giao)',
+                        dbMatches: matches,
+                    });
+                } else {
+                    dbResults.push({ url, inDb: false });
+                    urlsForValidity.push(url);
+                }
+            });
+
+            // Phase 2: Validity check only for non-duplicate URLs
+            let validityResults = [];
+            if (!skipValidity && urlsForValidity.length > 0) {
+                const { checkLinks, getCacheStats } = require('../utils/linkChecker');
+                validityResults = await checkLinks(urlsForValidity, 5, !!forceRefresh);
+            }
+
+            // Merge results: DB results + validity results
+            const validityMap = {};
+            validityResults.forEach(r => { validityMap[r.url] = r; });
+
+            const results = toCheck.map(url => {
+                const dbResult = dbResults.find(d => d.url === url);
+                if (dbResult && dbResult.inDb) {
+                    return dbResult; // Already in DB, no ScraperAPI needed
+                }
+                return validityMap[url] || { url, status: 'unknown', detail: 'Chưa kiểm tra' };
+            });
+
+            const cachedCount = validityResults.filter(r => r.fromCache).length;
+            const dupCount = dbResults.filter(d => d.inDb).length;
+            const { getCacheStats } = require('../utils/linkChecker');
+            res.json({
+                results,
+                dupCount,
+                checkedCount: urlsForValidity.length,
+                cachedCount,
+                cacheStats: getCacheStats(),
+                creditsSaved: dupCount > 0 ? `~${dupCount * 20} credits tiết kiệm nhờ check DB` : null,
+            });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
