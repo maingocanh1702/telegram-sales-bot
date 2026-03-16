@@ -2,7 +2,7 @@
 
 **Product Spec:** [feature_settings.md](../FE/feature_settings.md)
 **Backend:** Node.js + sql.js (SQLite)
-**Handler:** `adminAPI.js`, `database.js`
+**Handler:** `src/handlers/adminAPI.js` → `src/database.js`
 
 ---
 
@@ -13,38 +13,14 @@
 ```sql
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 ```
-
-### Default Settings
-
-| Key | Default | Mô tả |
-|-----|---------|-------|
-| `payment_timeout` | `600` | Timeout thanh toán (giây) |
-| `order_expiry_message` | Built-in | Tin nhắn hết hạn |
-| `support_username` | From config | Username hỗ trợ |
-| `support_url` | From config | Link group hỗ trợ |
-| `welcome_message` | Built-in | Tin nhắn chào mừng bot |
-| `bank_id` | `` | Bank ID cho VietQR |
-| `bank_code` | `` | Mã ngân hàng |
-| `bank_name` | `` | Tên ngân hàng |
-| `bank_account_no` | `` | Số tài khoản |
-| `bank_account_name` | `` | Tên chủ TK |
-| `checker_enabled` | `1` | Bật/tắt public link checker |
-| `checker_daily_quota` | `20` | Quota link checker/ngày/IP |
-| `checker_max_batch` | `10` | Max links/batch |
 
 ---
 
 ## 2. API Contract
-
-### Settings Endpoints
-
-| Method | Path | Mô tả |
-|--------|------|-------|
-| GET | `/api/admin/settings` | Get all settings |
-| PUT | `/api/admin/settings` | Update settings (partial) |
 
 ### GET `/api/admin/settings`
 
@@ -63,60 +39,78 @@ CREATE TABLE IF NOT EXISTS settings (
 }
 ```
 
+**Logic:**
+
+```javascript
+const settings = db.getAllSettings();
+const config = require('../config');
+res.json({
+    bank_id: settings.bank_id || config.bank.id || '',
+    bank_code: settings.bank_code || config.bank.code || '',
+    bank_name: settings.bank_name || config.bank.name || '',
+    bank_account_no: settings.bank_account_no || config.bank.accountNo || '',
+    bank_account_name: settings.bank_account_name || config.bank.accountName || '',
+    checker_enabled: settings.checker_enabled || '1',
+    checker_daily_quota: settings.checker_daily_quota || '20',
+    checker_max_batch: settings.checker_max_batch || '10',
+});
+```
+
+> **Fallback chain:** DB settings → config.js (env vars) → hardcoded defaults
+
 ### PUT `/api/admin/settings`
 
-**Request:**
+**Request (partial):**
 
 ```json
 {
-  "bank_code": "MB",
-  "bank_account_no": "9876543210",
-  "checker_enabled": "0"
+  "checker_enabled": "0",
+  "checker_daily_quota": "50"
 }
 ```
 
 **Response 200:**
 
 ```json
-{ "message": "3 settings updated" }
+{ "message": "2 settings updated" }
 ```
 
-### Allowed Keys (whitelist)
+**Whitelist (only these keys allowed):**
 
 ```javascript
 const allowed = [
-  'bank_id', 'bank_code', 'bank_name',
-  'bank_account_no', 'bank_account_name',
-  'checker_enabled', 'checker_daily_quota', 'checker_max_batch'
+    'bank_id', 'bank_code', 'bank_name',
+    'bank_account_no', 'bank_account_name',
+    'checker_enabled', 'checker_daily_quota', 'checker_max_batch'
 ];
 ```
+
+Non-whitelisted keys are **silently ignored**.
 
 ---
 
 ## 3. Backend Implementation
 
-### Settings Pattern (`database.js`)
+### Functions (`database.js`)
 
 ```javascript
-// getSetting(key):
-//   SELECT value FROM settings WHERE key = ?
-//   Return: value or null
+getAllSettings()
+// SELECT * FROM settings → returns {key1: val1, key2: val2, ...}
 
-// setSetting(key, value):
-//   INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
-//   saveDatabase()
+getSetting(key)
+// SELECT value FROM settings WHERE key = ?
 
-// getAllSettings():
-//   SELECT * FROM settings
-//   Return: {key1: val1, key2: val2, ...}
+setSetting(key, value)
+// INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
+// saveDatabase()
 ```
 
 ### Config Priority
 
 ```
-1. Database settings (runtime editable)
-2. environment variables (deploy-time)
-3. config.js defaults (code-level)
+1. settings table (DB, runtime editable)      ← admin panel PUT
+2. config.js (env → process.env.*)            ← deploy-time
+3. hardcoded defaults in GET response          ← code-level
 ```
 
 ---
@@ -125,47 +119,24 @@ const allowed = [
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
-| 1 | Security | Update non-whitelisted key | Silently ignored |
-| 2 | Data Integrity | Empty value | Allow (clear setting) |
-| 3 | Data Integrity | Invalid value type | String stored, consumers handle parsing |
-| 4 | Cross-Feature | Change bank mid-orders | Existing orders keep old bank |
-| 5 | Cross-Feature | Disable checker | checker.html shows overlay |
-| 6 | Security | Settings API without auth | 403 Unauthorized |
-| 7 | Data Integrity | First run, no settings | Defaults from config.js |
-| 8 | Data Integrity | DB corruption | Settings table recreated on init |
+| 1 | Security | Non-whitelisted key in PUT | Silently ignored |
+| 2 | Data Integrity | Empty value | Allowed (clears setting) |
+| 3 | Data Integrity | Key not in DB | Fallback to config.js/defaults |
+| 4 | Cross-Feature | Change bank settings | Legacy — prefer bank_accounts table |
+| 5 | Cross-Feature | Disable checker | checker_enabled = '0' → API returns 403 |
+| 6 | Data Integrity | All values are strings | Consumers parse as needed |
+| 7 | Security | No auth | 403 without API key |
+| 8 | Data Integrity | First run, empty settings | GET returns defaults |
 
 ---
 
-## 5. Security Considerations
-
-| Concern | Solution |
-|---------|----------|
-| Admin auth | API key required |
-| Sensitive values | Bank info admin-only |
-| Key injection | Whitelist filter |
-| Config hierarchy | DB > env > defaults |
-
----
-
-## 6. Caching Strategy
-
-| Data | Cache | TTL |
-|------|-------|-----|
-| Settings | In-memory (loaded on boot) | Until update via API |
-
----
-
-## 7. Testing Plan
+## 5. Testing Plan
 
 ### Unit Tests
 
-- getSetting: existing key, missing key, default
-- setSetting: insert new, update existing
-- getAllSettings: returns all as object
-- Whitelist: non-allowed keys ignored in PUT
-
-### Integration Tests
-
-- Full flow: update bank settings → new orders use new bank
-- Checker toggle: disable → checker.html shows disabled
-- Settings persist across restart (SQLite file)
+- getAllSettings: returns key-value object
+- setSetting: INSERT new, UPDATE existing
+- GET: fallback chain (DB → config → default)
+- PUT: only whitelisted keys saved
+- PUT: non-whitelisted keys silently ignored
+- PUT: count of updated keys correct
