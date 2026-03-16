@@ -1736,7 +1736,7 @@ Số Lượng Đang Hiện Có 10"
           redeemed: { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', icon: '🔴', label: 'Đã redeem' },
           expired: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', text: '#f59e0b', icon: '⏰', label: 'Hết hạn' },
           dead: { bg: 'rgba(107,114,128,0.15)', border: 'rgba(107,114,128,0.4)', text: '#6b7280', icon: '💀', label: 'Dead (404)' },
-          blocked: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', text: '#f59e0b', icon: '🚫', label: 'Bị chặn' },
+          cf_blocked: { bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)', text: '#3b82f6', icon: '🛡️', label: 'Cloudflare (mở thủ công)' },
           redirected: { bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.4)', text: '#3b82f6', icon: '↪️', label: 'Redirect' },
           timeout: { bg: 'rgba(107,114,128,0.15)', border: 'rgba(107,114,128,0.4)', text: '#6b7280', icon: '⏱️', label: 'Timeout' },
           error: { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', icon: '❌', label: 'Lỗi' },
@@ -1745,9 +1745,17 @@ Số Lượng Đang Hiện Có 10"
 
         // Summary counts
         const counts = {};
+        const hasCfBlocked = res.results.some(r => r.status === 'cf_blocked');
         res.results.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
 
-        let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:13px">`;
+        let html = '';
+        if (hasCfBlocked) {
+          html += `<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#93c5fd">
+            🛡️ <strong>Cloudflare anti-bot</strong> chặn request từ server. Click vào link để mở trong browser và kiểm tra thủ công.
+          </div>`;
+        }
+
+        html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:13px">`;
         for (const [status, count] of Object.entries(counts)) {
           const s = statusColors[status] || statusColors.unknown;
           html += `<span style="background:${s.bg};color:${s.text};padding:4px 10px;border-radius:6px;font-weight:500">${s.icon} ${s.label}: ${count}</span>`;
@@ -1760,18 +1768,26 @@ Số Lượng Đang Hiện Có 10"
           const s = statusColors[r.status] || statusColors.unknown;
           const meta = urlIndexMap[i];
           const shortUrl = r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url;
+          const safeUrl = r.url.replace(/"/g, '&quot;');
 
           html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border-radius:6px;background:${s.bg};border:1px solid ${s.border};font-size:12px">`;
           html += `<span style="min-width:40px;font-weight:600;color:var(--text-muted)">#${meta.line}</span>`;
           html += `<span style="font-size:16px">${s.icon}</span>`;
-          html += `<span style="flex:1;word-break:break-all"><code>${shortUrl}</code></span>`;
+          html += `<a href="${safeUrl}" target="_blank" rel="noopener" style="flex:1;word-break:break-all;color:var(--primary);text-decoration:underline;cursor:pointer"><code>${shortUrl}</code></a>`;
           html += `<span style="color:${s.text};white-space:nowrap;font-weight:500">${r.detail}</span>`;
           html += `</div>`;
         }
 
         document.getElementById('dupReportTitle').textContent = `🔗 Kết quả kiểm tra ${urlsToCheck.length} links`;
         document.getElementById('dupReportBody').innerHTML = html;
-        document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+
+        // Actions — add "Open all" button if there are cf_blocked links
+        let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+        if (hasCfBlocked) {
+          actionsHtml += ` <button class="btn btn-primary" onclick="window._linkCheckUrls.forEach(u => window.open(u, '_blank'))">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
+          window._linkCheckUrls = urlsToCheck;
+        }
+        document.getElementById('dupReportActions').innerHTML = actionsHtml;
       } catch (e) {
         document.getElementById('dupReportBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
         document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
