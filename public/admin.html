@@ -1749,6 +1749,24 @@ Số Lượng Đang Hiện Có 10"
         res.results.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
 
         let html = '';
+
+        // ---- Detect duplicate URLs within the batch ----
+        const urlCount = {};
+        urlsToCheck.forEach((u, i) => {
+          if (!urlCount[u]) urlCount[u] = [];
+          urlCount[u].push(urlIndexMap[i].line);
+        });
+        const dupUrls = Object.entries(urlCount).filter(([, lines]) => lines.length > 1);
+        if (dupUrls.length > 0) {
+          html += `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px">`;
+          html += `<strong>⚠️ Phát hiện ${dupUrls.length} credential trùng nhau trong batch:</strong><br>`;
+          for (const [url, lines] of dupUrls) {
+            const shortDup = url.length > 50 ? url.substring(0, 50) + '...' : url;
+            html += `<div style="margin-top:4px">Dòng <strong>${lines.join(', ')}</strong> trùng nhau: <code>${shortDup}</code></div>`;
+          }
+          html += `</div>`;
+        }
+
         if (hasCfBlocked) {
           html += `<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#93c5fd">
             🛡️ <strong>Cloudflare anti-bot</strong> chặn request từ server. Click vào link để mở trong browser và kiểm tra thủ công.
@@ -1769,29 +1787,41 @@ Số Lượng Đang Hiện Có 10"
           const meta = urlIndexMap[i];
           const shortUrl = r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url;
           const safeUrl = r.url.replace(/"/g, '&quot;');
+          const isDup = urlCount[r.url] && urlCount[r.url].length > 1;
 
-          html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border-radius:6px;background:${s.bg};border:1px solid ${s.border};font-size:12px">`;
+          html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border-radius:6px;background:${isDup ? 'rgba(239,68,68,0.1)' : s.bg};border:1px solid ${isDup ? 'rgba(239,68,68,0.3)' : s.border};font-size:12px">`;
           html += `<span style="min-width:40px;font-weight:600;color:var(--text-muted)">#${meta.line}</span>`;
-          html += `<span style="font-size:16px">${s.icon}</span>`;
+          html += `<span style="font-size:16px">${isDup ? '🔁' : s.icon}</span>`;
           html += `<a href="${safeUrl}" target="_blank" rel="noopener" style="flex:1;word-break:break-all;color:var(--primary);text-decoration:underline;cursor:pointer"><code>${shortUrl}</code></a>`;
-          html += `<span style="color:${s.text};white-space:nowrap;font-weight:500">${r.detail}</span>`;
+          html += `<span style="color:${isDup ? '#ef4444' : s.text};white-space:nowrap;font-weight:500">${isDup ? 'TRÙNG' : r.detail}</span>`;
           html += `</div>`;
         }
 
         document.getElementById('dupReportTitle').textContent = `🔗 Kết quả kiểm tra ${urlsToCheck.length} links`;
         document.getElementById('dupReportBody').innerHTML = html;
 
-        // Actions — add "Open all" button if there are cf_blocked links
+        // Actions — fix: open tabs with delay to avoid popup blocker
         let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
         if (hasCfBlocked) {
-          actionsHtml += ` <button class="btn btn-primary" onclick="window._linkCheckUrls.forEach(u => window.open(u, '_blank'))">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
-          window._linkCheckUrls = urlsToCheck;
+          actionsHtml += ` <button class="btn btn-primary" onclick="openAllLinksStaggered()">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
+          window._linkCheckUrls = [...new Set(urlsToCheck)]; // dedupe URLs for opening
         }
         document.getElementById('dupReportActions').innerHTML = actionsHtml;
       } catch (e) {
         document.getElementById('dupReportBody').innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">❌ ${e.message}</p>`;
         document.getElementById('dupReportActions').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
       }
+    }
+
+    function openAllLinksStaggered() {
+      const urls = window._linkCheckUrls || [];
+      if (urls.length === 0) return;
+      // Open first one immediately (user gesture), rest with delay
+      window.open(urls[0], '_blank');
+      for (let i = 1; i < urls.length; i++) {
+        setTimeout(() => window.open(urls[i], '_blank'), i * 500);
+      }
+      toast(`Đang mở ${urls.length} tabs...`);
     }
 
     function editCred(id, dataB64) {
