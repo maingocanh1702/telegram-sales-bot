@@ -1,0 +1,362 @@
+/**
+ * Link Checker Utility
+ * Check if credential links (gift codes, redeem URLs, etc.) are still valid
+ *
+ * Supports:
+ * - Claude.ai gift/redeem links (via API + page analysis)
+ * - Generic URLs (via HTTP status check)
+ */
+
+const BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"macOS"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+};
+
+/**
+ * Extract Claude gift code from URL
+ * Supports: https://claude.ai/gift/redeem?code=UUID
+ */
+function extractClaudeCode(url) {
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.hostname === 'claude.ai' && urlObj.pathname.includes('/gift/redeem')) {
+            return urlObj.searchParams.get('code');
+        }
+    } catch { }
+    return null;
+}
+
+/**
+ * Check a Claude.ai gift code via multiple strategies
+ */
+async function checkClaudeGift(url, code) {
+    const strategies = [
+        () => checkClaudeApi(url, code),
+        () => checkClaudeRedirect(url, code),
+        () => checkClaudeFetch(url),
+    ];
+
+    for (const strategy of strategies) {
+        try {
+            const result = await strategy();
+            if (result && result.status !== 'cf_blocked' && result.status !== 'unknown') {
+                return result;
+            }
+        } catch (err) {
+            console.warn(`[LinkChecker] Strategy failed:`, err.message);
+        }
+    }
+
+    // All strategies failed
+    return {
+        url,
+        status: 'cf_blocked',
+        httpStatus: 403,
+        detail: 'Cloudflare chặn — cần mở link thủ công để kiểm tra',
+    };
+}
+
+/**
+ * Strategy 1: Try claude.ai internal API endpoint
+ * The SPA likely calls an API to validate gift codes
+ */
+async function checkClaudeApi(url, code) {
+    // Try common API patterns used by Claude
+    const apiUrls = [
+        `https://claude.ai/api/gift/${code}`,
+        `https://claude.ai/api/gift/validate/${code}`,
+        `https://claude.ai/api/organizations/gift/${code}`,
+    ];
+
+    for (const apiUrl of apiUrls) {
+        try {
+            const resp = await fetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                    ...BROWSER_HEADERS,
+                    'Accept': 'application/json, text/plain, */*',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                },
+                signal: AbortSignal.timeout(8000),
+                redirect: 'manual',
+            });
+
+            // If we get JSON response, analyze it
+            if (resp.status === 200) {
+                const text = await resp.text();
+                try {
+                    const data = JSON.parse(text);
+                    return analyzeClaudeApiResponse(url, data);
+                } catch {
+                    // Not JSON, check text content
+                    return analyzeTextContent(url, resp.status, text);
+                }
+            }
+
+            // 404 = code doesn't exist or invalid endpoint
+            if (resp.status === 404) {
+                const text = await resp.text();
+                try {
+                    const data = JSON.parse(text);
+                    if (data.error?.type === 'not_found' ||
+                        data.error?.message?.includes('not found') ||
+                        data.error?.message?.includes('invalid')) {
+                        return { url, status: 'dead', httpStatus: 404, detail: 'Code không tồn tại' };
+                    }
+                } catch { }
+                // Don't return — 404 might just mean wrong API path
+                continue;
+            }
+
+            // 410 Gone = already redeemed
+            if (resp.status === 410) {
+                return { url, status: 'redeemed', httpStatus: 410, detail: 'Gift đã được redeem (410 Gone)' };
+            }
+
+            // 422 = validation error (possibly already redeemed)
+            if (resp.status === 422) {
+                const text = await resp.text();
+                try {
+                    const data = JSON.parse(text);
+                    const msg = (data.error?.message || data.message || '').toLowerCase();
+                    if (msg.includes('already') || msg.includes('redeemed') || msg.includes('claimed')) {
+                        return { url, status: 'redeemed', httpStatus: 422, detail: `Gift đã được redeem: ${data.error?.message || data.message}` };
+                    }
+                    if (msg.includes('expired') || msg.includes('invalid')) {
+                        return { url, status: 'dead', httpStatus: 422, detail: data.error?.message || data.message };
+                    }
+                } catch { }
+            }
+
+        } catch (err) {
+            // Timeout or network error — try next
+            continue;
+        }
+    }
+
+    return null; // All API attempts failed, try next strategy
+}
+
+/**
+ * Strategy 2: Check redirect behavior (no-follow)
+ */
+async function checkClaudeRedirect(url, code) {
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: BROWSER_HEADERS,
+            redirect: 'manual',
+            signal: AbortSignal.timeout(8000),
+        });
+
+        const location = resp.headers.get('location') || '';
+        const status = resp.status;
+
+        // Redirect to login/signup = code might be valid (need auth to redeem)
+        if (status >= 300 && status < 400) {
+            if (location.includes('/login') || location.includes('/signup') || location.includes('/oauth')) {
+                return { url, status: 'live', httpStatus: status, detail: `Redirect → login (code likely valid)` };
+            }
+            if (location.includes('/settings') || location.includes('/dashboard') || location.includes('/chat')) {
+                return { url, status: 'redeemed', httpStatus: status, detail: `Redirect → dashboard (đã redeem)` };
+            }
+            return { url, status: 'unknown', httpStatus: status, detail: `Redirect → ${location}` };
+        }
+
+        // 200 = page loaded (rare without Cloudflare)
+        if (status === 200) {
+            const text = await resp.text();
+            return analyzeTextContent(url, status, text);
+        }
+
+        // 403 = Cloudflare
+        if (status === 403) {
+            return null; // Try next strategy
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Strategy 3: Full fetch with response body analysis
+ */
+async function checkClaudeFetch(url) {
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: BROWSER_HEADERS,
+            redirect: 'follow',
+            signal: AbortSignal.timeout(10000),
+        });
+
+        const text = await resp.text();
+        return analyzeTextContent(url, resp.status, text);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Analyze Claude API JSON response
+ */
+function analyzeClaudeApiResponse(url, data) {
+    const errorType = data.error?.type || '';
+    const errorMsg = (data.error?.message || '').toLowerCase();
+    const dataStatus = (data.status || '').toLowerCase();
+
+    // Already redeemed
+    if (errorType === 'gift_already_redeemed' ||
+        errorMsg.includes('already redeemed') ||
+        errorMsg.includes('already claimed') ||
+        errorMsg.includes('already been used') ||
+        dataStatus === 'redeemed' ||
+        dataStatus === 'claimed') {
+        return { url, status: 'redeemed', httpStatus: 200, detail: 'Gift đã được redeem' };
+    }
+
+    // Expired
+    if (errorType === 'gift_expired' ||
+        errorMsg.includes('expired') ||
+        dataStatus === 'expired') {
+        return { url, status: 'expired', httpStatus: 200, detail: 'Gift đã hết hạn' };
+    }
+
+    // Invalid / not found
+    if (errorType === 'not_found' ||
+        errorType === 'invalid_gift' ||
+        errorMsg.includes('not found') ||
+        errorMsg.includes('invalid')) {
+        return { url, status: 'dead', httpStatus: 200, detail: 'Gift code không hợp lệ' };
+    }
+
+    // Valid / pending / active
+    if (dataStatus === 'active' ||
+        dataStatus === 'pending' ||
+        dataStatus === 'valid' ||
+        data.gift_type ||
+        data.plan ||
+        data.organization) {
+        return { url, status: 'live', httpStatus: 200, detail: 'Gift code còn sống' };
+    }
+
+    return { url, status: 'unknown', httpStatus: 200, detail: `API response: ${JSON.stringify(data).substring(0, 100)}` };
+}
+
+/**
+ * Analyze HTML/text response for gift status keywords
+ */
+function analyzeTextContent(url, httpStatus, text) {
+    const lower = text.toLowerCase();
+
+    // Cloudflare challenge page indicators
+    if (lower.includes('cf-browser-verification') ||
+        lower.includes('cloudflare') && lower.includes('challenge') ||
+        lower.includes('turnstile') ||
+        (lower.includes('just a moment') && lower.includes('checking'))) {
+        return { url, status: 'cf_blocked', httpStatus, detail: 'Cloudflare challenge page' };
+    }
+
+    // Already redeemed
+    if (lower.includes('already been redeemed') ||
+        lower.includes('already redeemed') ||
+        lower.includes('has been claimed') ||
+        lower.includes('already claimed') ||
+        lower.includes('gift has been used') ||
+        lower.includes('already been used') ||
+        lower.includes('gift_already_redeemed') ||
+        lower.includes('đã được sử dụng')) {
+        return { url, status: 'redeemed', httpStatus, detail: 'Gift đã được redeem' };
+    }
+
+    // Expired
+    if (lower.includes('expired') || lower.includes('no longer valid') || lower.includes('hết hạn')) {
+        return { url, status: 'expired', httpStatus, detail: 'Link đã hết hạn' };
+    }
+
+    // Valid / live indicators
+    if (lower.includes('redeem this gift') ||
+        lower.includes('accept gift') ||
+        lower.includes('claim this gift') ||
+        lower.includes('activate your')) {
+        return { url, status: 'live', httpStatus, detail: 'Link còn sống, chưa redeem' };
+    }
+
+    // 404
+    if (httpStatus === 404) {
+        return { url, status: 'dead', httpStatus, detail: 'Link không tồn tại (404)' };
+    }
+
+    // 200 but can't determine
+    if (httpStatus === 200) {
+        return { url, status: 'unknown', httpStatus, detail: 'Không thể xác định trạng thái' };
+    }
+
+    return { url, status: 'unknown', httpStatus, detail: `HTTP ${httpStatus}` };
+}
+
+/**
+ * Check a generic URL (non-Claude)
+ */
+async function checkGenericUrl(url) {
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'User-Agent': BROWSER_HEADERS['User-Agent'],
+                'Accept': 'text/html,application/xhtml+xml,application/json',
+            },
+            signal: AbortSignal.timeout(8000),
+            redirect: 'follow',
+        });
+
+        const text = await resp.text();
+        return analyzeTextContent(url, resp.status, text);
+    } catch (err) {
+        if (err.name === 'TimeoutError' || err.message?.includes('timeout')) {
+            return { url, status: 'timeout', httpStatus: 0, detail: 'Timeout (8s)' };
+        }
+        return { url, status: 'error', httpStatus: 0, detail: err.message };
+    }
+}
+
+/**
+ * Main check function — routes to appropriate checker based on URL
+ */
+async function checkLink(url) {
+    const claudeCode = extractClaudeCode(url);
+    if (claudeCode) {
+        return checkClaudeGift(url, claudeCode);
+    }
+    return checkGenericUrl(url);
+}
+
+/**
+ * Check multiple links with concurrency control
+ */
+async function checkLinks(urls, concurrency = 5) {
+    const results = [];
+    for (let i = 0; i < urls.length; i += concurrency) {
+        const batch = urls.slice(i, i + concurrency).map(checkLink);
+        const batchResults = await Promise.all(batch);
+        results.push(...batchResults);
+    }
+    return results;
+}
+
+module.exports = { checkLink, checkLinks, extractClaudeCode };
