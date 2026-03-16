@@ -480,6 +480,20 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Export link cache history
+    app.get('/api/admin/credentials/link-cache', (req, res) => {
+        try {
+            const d = db.getDb();
+            const stmt = d.prepare('SELECT url, status, http_status, detail, checked_at FROM link_cache ORDER BY checked_at DESC');
+            const rows = [];
+            while (stmt.step()) rows.push(stmt.getAsObject());
+            stmt.free();
+            res.json({ total: rows.length, entries: rows });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     app.put('/api/admin/credentials/:id', (req, res) => {
         try {
             const { data } = req.body;
