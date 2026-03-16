@@ -708,9 +708,22 @@
       </div>
 
       <div class="section" id="sec-orders">
-        <div class="page-header">
-          <h1>Đơn hàng</h1>
-          <p>Tất cả đơn hàng</p>
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+          <div>
+            <h1>Đơn hàng</h1>
+            <p>Tất cả đơn hàng</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="position:relative">
+              <span class="material-symbols-rounded" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--text-muted);pointer-events:none">search</span>
+              <input id="credSearchInput" type="text" placeholder="Tìm credential theo mã đơn..." 
+                style="padding:9px 12px 9px 36px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-size:13px;width:260px;transition:border-color .2s"
+                onkeydown="if(event.key==='Enter')searchCredentialByOrderCode()">
+            </div>
+            <button class="btn btn-primary" onclick="searchCredentialByOrderCode()" style="white-space:nowrap">
+              <span class="material-symbols-rounded" style="font-size:16px">key</span> Tra cứu
+            </button>
+          </div>
         </div>
         <div class="card">
           <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
@@ -1713,6 +1726,18 @@ Số Lượng Đang Hiện Có 10"
         document.body.removeChild(ta);
         toast('📋 Đã copy!');
       });
+    }
+
+    function searchCredentialByOrderCode() {
+      const input = document.getElementById('credSearchInput');
+      const code = input.value.trim();
+      if (!code) {
+        toast('Nhập mã đơn hàng để tra cứu', 'error');
+        input.focus();
+        return;
+      }
+      viewOrderCredentials(code);
+      input.value = '';
     }
 
     async function viewOrderCredentials(code) {
