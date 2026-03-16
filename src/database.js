@@ -160,6 +160,17 @@ async function initDatabase() {
     )
   `);
 
+    db.run(`
+    CREATE TABLE IF NOT EXISTS link_cache (
+      url TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      http_status INTEGER DEFAULT 0,
+      detail TEXT,
+      checked_at INTEGER NOT NULL,
+      raw_data TEXT
+    )
+  `);
+
     // ==================== Migrations ====================
     // Add new columns to existing tables (safe to run multiple times)
     const migrations = [

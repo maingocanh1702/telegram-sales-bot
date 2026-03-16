@@ -457,48 +457,91 @@ async function checkViaScraperApi(url) {
 }
 
 /**
- * ==================== Cache System ====================
+ * ==================== Cache System (SQLite-persisted) ====================
+ * Survives server restarts and Railway deploys.
  * Smart TTL based on status:
- * - redeemed/dead/expired: permanent (won't change)
- * - live: 15 min (can be redeemed anytime)
- * - everything else: not cached
+ * - redeemed: permanent (won't un-redeem)
+ * - dead/expired: 24 hours
+ * - live: 15 minutes (can be redeemed anytime)
+ * - unknown: 5 minutes (avoid re-checking too fast)
+ * - error/cf_blocked: not cached
  */
-const linkCache = new Map();
-
 const CACHE_TTL = {
-    redeemed: Infinity,      // Permanent — won't un-redeem
-    dead: 24 * 60 * 60000,   // 24 hours
-    expired: 24 * 60 * 60000,// 24 hours
-    live: 15 * 60000,        // 15 minutes
+    redeemed: Infinity,       // Permanent
+    dead: 24 * 60 * 60000,    // 24 hours
+    expired: 24 * 60 * 60000, // 24 hours
+    live: 15 * 60000,         // 15 minutes
+    unknown: 5 * 60000,       // 5 minutes
 };
 
+function _getDb() {
+    try { return require('../database').getDb(); } catch { return null; }
+}
+
 function getCachedResult(url) {
-    const entry = linkCache.get(url);
-    if (!entry) return null;
-    const ttl = CACHE_TTL[entry.result.status];
-    if (!ttl) return null; // No TTL = don't cache this status
-    if (ttl !== Infinity && Date.now() - entry.timestamp > ttl) {
-        linkCache.delete(url);
+    const d = _getDb();
+    if (!d) return null;
+    try {
+        const stmt = d.prepare('SELECT status, http_status, detail, checked_at, raw_data FROM link_cache WHERE url = ?');
+        stmt.bind([url]);
+        if (!stmt.step()) { stmt.free(); return null; }
+        const row = stmt.getAsObject();
+        stmt.free();
+
+        const ttl = CACHE_TTL[row.status];
+        if (!ttl && ttl !== 0) return null; // No TTL = don't cache this status
+        if (ttl !== Infinity && Date.now() - row.checked_at > ttl) {
+            // Expired — delete from DB
+            d.run('DELETE FROM link_cache WHERE url = ?', [url]);
+            require('../database').saveDatabase();
+            return null;
+        }
+        return {
+            url,
+            status: row.status,
+            httpStatus: row.http_status,
+            detail: row.detail,
+            fromCache: true,
+            cachedAt: row.checked_at,
+        };
+    } catch (e) {
+        console.warn('[LinkChecker] Cache read error:', e.message);
         return null;
     }
-    return { ...entry.result, fromCache: true, cachedAt: new Date(entry.timestamp).toISOString() };
 }
 
 function setCachedResult(url, result) {
     const ttl = CACHE_TTL[result.status];
-    if (!ttl) return; // Don't cache errors, unknown, cf_blocked
-    linkCache.set(url, { result, timestamp: Date.now() });
+    if (!ttl && ttl !== 0) return; // Don't cache errors, cf_blocked
+    const d = _getDb();
+    if (!d) return;
+    try {
+        d.run(
+            'INSERT OR REPLACE INTO link_cache (url, status, http_status, detail, checked_at, raw_data) VALUES (?, ?, ?, ?, ?, ?)',
+            [url, result.status, result.httpStatus || 0, result.detail || '', Date.now(), JSON.stringify(result)]
+        );
+        require('../database').saveDatabase();
+    } catch (e) {
+        console.warn('[LinkChecker] Cache write error:', e.message);
+    }
 }
 
 function getCacheStats() {
-    let total = 0, redeemed = 0, live = 0, other = 0;
-    for (const [, entry] of linkCache) {
-        total++;
-        if (entry.result.status === 'redeemed') redeemed++;
-        else if (entry.result.status === 'live') live++;
-        else other++;
-    }
-    return { total, redeemed, live, other };
+    const d = _getDb();
+    if (!d) return { total: 0, redeemed: 0, live: 0, other: 0 };
+    try {
+        const result = d.exec(`
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) as redeemed,
+                SUM(CASE WHEN status = 'live' THEN 1 ELSE 0 END) as live,
+                SUM(CASE WHEN status NOT IN ('redeemed', 'live') THEN 1 ELSE 0 END) as other
+            FROM link_cache
+        `);
+        if (result.length === 0) return { total: 0, redeemed: 0, live: 0, other: 0 };
+        const row = result[0].values[0];
+        return { total: row[0], redeemed: row[1], live: row[2], other: row[3] };
+    } catch { return { total: 0, redeemed: 0, live: 0, other: 0 }; }
 }
 
 /**
