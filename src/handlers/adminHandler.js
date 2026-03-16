@@ -187,6 +187,7 @@ function setupAdminHandler(bot) {
         const statusEmoji = {
             pending: '⏳',
             paid: '✅',
+            delivering: '📤',
             delivered: '📬',
             cancelled: '❌',
             expired: '⏰',
