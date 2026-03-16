@@ -414,14 +414,17 @@ async function checkViaScraperApi(url) {
             if (resp.status === 200) {
                 const text = await resp.text();
                 const result = analyzeTextContent(url, 200, text);
-                // If still Cloudflare blocked, try next tier
-                if (result.status === 'cf_blocked') {
-                    console.log(`[LinkChecker] Tier "${tier.label}" still CF blocked, trying next...`);
-                    continue;
+
+                // Definitive results — accept immediately (saves credits!)
+                const definitive = ['live', 'redeemed', 'dead', 'expired'];
+                if (definitive.includes(result.status)) {
+                    console.log(`[LinkChecker] Tier "${tier.label}" definitive: ${result.status}`);
+                    return result;
                 }
-                // Got a real result — return it (saves credits!)
-                console.log(`[LinkChecker] Tier "${tier.label}" success: ${result.status}`);
-                return result;
+
+                // Non-definitive (cf_blocked, unknown, error) — try next tier
+                console.log(`[LinkChecker] Tier "${tier.label}" got "${result.status}", escalating to next tier...`);
+                continue;
             }
 
             if (resp.status === 403 || resp.status === 429) {
