@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Checker — Kiểm tra link credential miễn phí</title>
+    <meta name="description" content="Kiểm tra trạng thái link credential Claude, ChatGPT, Netflix nhanh chóng và miễn phí. Powered by BotShop.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-light: rgba(99, 102, 241, 0.15);
+            --bg: #0a0e1a;
+            --bg-card: #111827;
+            --bg-card-hover: #1a2235;
+            --bg-input: #0d1117;
+            --text: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #1e293b;
+            --border-focus: #6366f1;
+            --success: #22c55e;
+            --success-bg: rgba(34, 197, 94, 0.12);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245, 158, 11, 0.12);
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.12);
+            --info: #3b82f6;
+            --info-bg: rgba(59, 130, 246, 0.12);
+            --gradient-primary: linear-gradient(135deg, #6366f1, #8b5cf6);
+            --gradient-hero: linear-gradient(135deg, #0a0e1a 0%, #1a1040 50%, #0a0e1a 100%);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ========== HERO ========== */
+        .hero {
+            background: var(--gradient-hero);
+            padding: 80px 24px 60px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 50%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 30%, rgba(139,92,246,0.06) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-20px, -10px); }
+        }
+        .hero-content { position: relative; z-index: 1; max-width: 700px; margin: 0 auto; }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--primary-light); color: var(--primary);
+            padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .hero h1 {
+            font-size: clamp(28px, 5vw, 42px); font-weight: 800;
+            line-height: 1.2; margin-bottom: 16px;
+            background: linear-gradient(135deg, #fff 0%, #c7d2fe 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            font-size: clamp(15px, 2.5vw, 18px); color: var(--text-secondary);
+            max-width: 540px; margin: 0 auto 28px;
+        }
+        .hero-cta {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--gradient-primary); color: #fff;
+            padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 600;
+            text-decoration: none; border: none; cursor: pointer;
+            transition: all 0.2s; box-shadow: 0 4px 16px rgba(99,102,241,0.3);
+        }
+        .hero-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(99,102,241,0.4); }
+
+        /* ========== CHECKER TOOL ========== */
+        .checker-section {
+            max-width: 800px; margin: -30px auto 40px; padding: 0 16px;
+            position: relative; z-index: 2;
+        }
+        .checker-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow);
+        }
+        .checker-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+        }
+        .checker-title { font-size: 18px; font-weight: 700; }
+        .quota-badge {
+            display: flex; align-items: center; gap: 6px;
+            background: var(--primary-light); color: var(--primary);
+            padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 500;
+        }
+        .quota-badge.exhausted { background: var(--danger-bg); color: var(--danger); }
+
+        .link-input {
+            width: 100%; min-height: 140px; max-height: 300px; resize: vertical;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 14px; font-family: 'Inter', monospace;
+            font-size: 14px; color: var(--text); line-height: 1.8;
+            transition: border-color 0.2s;
+        }
+        .link-input:focus { outline: none; border-color: var(--border-focus); }
+        .link-input::placeholder { color: var(--text-muted); }
+
+        .input-footer {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .link-count { font-size: 13px; color: var(--text-muted); }
+
+        .btn-check {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--gradient-primary); color: #fff;
+            padding: 12px 24px; border-radius: var(--radius-sm);
+            font-size: 15px; font-weight: 600; border: none; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-check:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,102,241,0.3); }
+        .btn-check:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .btn-secondary {
+            background: transparent; color: var(--text-secondary);
+            border: 1px solid var(--border); padding: 10px 18px;
+            border-radius: var(--radius-sm); font-size: 14px; font-weight: 500;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary:hover { background: var(--bg-card-hover); color: var(--text); }
+
+        /* Progress */
+        .progress-bar {
+            width: 100%; height: 6px; background: var(--border);
+            border-radius: 3px; margin: 16px 0; overflow: hidden; display: none;
+        }
+        .progress-bar.active { display: block; }
+        .progress-fill {
+            height: 100%; background: var(--gradient-primary);
+            border-radius: 3px; transition: width 0.3s;
+        }
+        .progress-text { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; display: none; }
+        .progress-text.active { display: block; }
+
+        /* Results */
+        .results-section { margin-top: 24px; display: none; }
+        .results-section.active { display: block; }
+        .results-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
+        }
+        .results-title { font-size: 16px; font-weight: 600; }
+        .results-stats {
+            display: flex; gap: 12px; flex-wrap: wrap;
+        }
+        .stat-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+        }
+        .stat-chip.live { background: var(--success-bg); color: var(--success); }
+        .stat-chip.redeemed { background: var(--danger-bg); color: var(--danger); }
+        .stat-chip.unknown { background: var(--warning-bg); color: var(--warning); }
+
+        .results-table {
+            width: 100%; border-collapse: collapse; font-size: 14px;
+        }
+        .results-table th {
+            text-align: left; padding: 10px 12px; color: var(--text-muted);
+            font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+        .results-table td {
+            padding: 10px 12px; border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        .results-table tr:last-child td { border-bottom: none; }
+        .url-cell {
+            max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-family: monospace; font-size: 13px; color: var(--text-secondary);
+        }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+            white-space: nowrap;
+        }
+        .status-badge.live { background: var(--success-bg); color: var(--success); }
+        .status-badge.redeemed { background: var(--danger-bg); color: var(--danger); }
+        .status-badge.dead { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+        .status-badge.expired { background: var(--warning-bg); color: var(--warning); }
+        .status-badge.unknown { background: var(--warning-bg); color: var(--warning); }
+        .status-badge.in_db_sold { background: var(--info-bg); color: var(--info); }
+        .status-badge.in_db_available { background: var(--info-bg); color: var(--info); }
+
+        /* Table wrapper for mobile scroll */
+        .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
+        /* ========== PROMO SECTION ========== */
+        .promo-section {
+            max-width: 800px; margin: 0 auto 60px; padding: 0 16px;
+        }
+        .promo-card {
+            background: linear-gradient(135deg, #1a1040 0%, #111827 100%);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: var(--radius); padding: 40px 32px; text-align: center;
+            position: relative; overflow: hidden;
+        }
+        .promo-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: var(--gradient-primary);
+        }
+        .promo-icon { font-size: 40px; margin-bottom: 16px; }
+        .promo-card h2 {
+            font-size: 22px; font-weight: 700; margin-bottom: 12px;
+        }
+        .promo-card p {
+            color: var(--text-secondary); font-size: 15px; max-width: 500px;
+            margin: 0 auto 24px;
+        }
+        .promo-features {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; margin-bottom: 28px; text-align: left;
+        }
+        .promo-feature {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 12px; background: rgba(255,255,255,0.03);
+            border-radius: var(--radius-sm);
+        }
+        .promo-feature-icon { font-size: 20px; flex-shrink: 0; }
+        .promo-feature-text { font-size: 14px; color: var(--text-secondary); }
+        .promo-feature-text strong { color: var(--text); display: block; margin-bottom: 2px; }
+
+        .promo-cta {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--gradient-primary); color: #fff;
+            padding: 14px 32px; border-radius: 10px; font-size: 16px; font-weight: 600;
+            text-decoration: none; transition: all 0.2s;
+            box-shadow: 0 4px 16px rgba(99,102,241,0.3);
+        }
+        .promo-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(99,102,241,0.4); }
+
+        /* ========== FOOTER ========== */
+        .footer {
+            text-align: center; padding: 24px; color: var(--text-muted);
+            font-size: 13px; border-top: 1px solid var(--border);
+        }
+        .footer a { color: var(--primary); text-decoration: none; }
+
+        /* ========== TOAST ========== */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 14px 20px;
+            font-size: 14px; box-shadow: var(--shadow);
+            transform: translateY(120%); transition: transform 0.3s;
+            z-index: 999; max-width: 400px;
+        }
+        .toast.show { transform: translateY(0); }
+        .toast.error { border-left: 3px solid var(--danger); }
+
+        /* ========== DISABLED STATE ========== */
+        .disabled-overlay {
+            display: none; text-align: center; padding: 40px;
+        }
+        .disabled-overlay.active { display: block; }
+        .disabled-overlay h2 { font-size: 24px; margin-bottom: 12px; }
+        .disabled-overlay p { color: var(--text-secondary); }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .hero { padding: 60px 16px 50px; }
+            .checker-card { padding: 20px; }
+            .promo-card { padding: 28px 20px; }
+            .promo-features { grid-template-columns: 1fr; }
+            .url-cell { max-width: 180px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ========== HERO ========== -->
+<section class="hero">
+    <div class="hero-content">
+        <div class="hero-badge">✨ Miễn phí — không cần đăng ký</div>
+        <h1>Kiểm tra link credential nhanh chóng</h1>
+        <p>Check trạng thái link Claude, ChatGPT, Netflix, Spotify... Biết ngay link còn sống hay đã bị redeem.</p>
+        <a href="#checker" class="hero-cta">🔍 Bắt đầu check ngay</a>
+    </div>
+</section>
+
+<!-- ========== CHECKER TOOL ========== -->
+<section class="checker-section" id="checker">
+    <div class="checker-card" id="checkerCard">
+        <div class="checker-header">
+            <div class="checker-title">🔗 Paste links để check</div>
+            <div class="quota-badge" id="quotaBadge">
+                <span>⚡</span> <span id="quotaText">Đang tải...</span>
+            </div>
+        </div>
+
+        <textarea class="link-input" id="linkInput" placeholder="Paste link vào đây, mỗi link 1 dòng...&#10;&#10;Ví dụ:&#10;https://claude.ai/redeem/abc123&#10;https://chatgpt.com/redeem/xyz789"></textarea>
+
+        <div class="input-footer">
+            <span class="link-count" id="linkCount">0 links</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn-secondary" id="btnExport" style="display:none" onclick="exportCSV()">📥 Export CSV</button>
+                <button class="btn-check" id="btnCheck" onclick="checkLinks()">🔍 Check Links</button>
+            </div>
+        </div>
+
+        <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText"></div>
+
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <div class="results-title">📊 Kết quả</div>
+                <div class="results-stats" id="resultsStats"></div>
+            </div>
+            <div class="table-wrap">
+                <table class="results-table">
+                    <thead><tr><th>#</th><th>URL</th><th>Trạng thái</th><th>Chi tiết</th></tr></thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disabled state -->
+    <div class="disabled-overlay" id="disabledOverlay">
+        <div style="font-size:48px;margin-bottom:16px">🔒</div>
+        <h2>Link Checker tạm dừng</h2>
+        <p>Tính năng kiểm tra link đang tạm ngưng hoạt động. Vui lòng quay lại sau.</p>
+    </div>
+</section>
+
+<!-- ========== PROMO ========== -->
+<section class="promo-section">
+    <div class="promo-card">
+        <div class="promo-icon">🚀</div>
+        <h2>Muốn bán hàng tự động trên Telegram?</h2>
+        <p>BotShop giúp bạn tạo shop bán credential tự động, thanh toán VietQR, quản lý đơn hàng — tất cả trong vài phút.</p>
+
+        <div class="promo-features">
+            <div class="promo-feature">
+                <span class="promo-feature-icon">🤖</span>
+                <div class="promo-feature-text">
+                    <strong>Bot Telegram tự động</strong>
+                    Khách chọn SP → thanh toán → nhận link tự động
+                </div>
+            </div>
+            <div class="promo-feature">
+                <span class="promo-feature-icon">💳</span>
+                <div class="promo-feature-text">
+                    <strong>VietQR + SePay</strong>
+                    Thanh toán bank transfer, xác nhận tự động
+                </div>
+            </div>
+            <div class="promo-feature">
+                <span class="promo-feature-icon">🎟</span>
+                <div class="promo-feature-text">
+                    <strong>Mã giảm giá linh hoạt</strong>
+                    Group, user cụ thể, khách mới, multi-product
+                </div>
+            </div>
+            <div class="promo-feature">
+                <span class="promo-feature-icon">📊</span>
+                <div class="promo-feature-text">
+                    <strong>Dashboard quản lý</strong>
+                    Doanh thu, đơn hàng, khách hàng, kho hàng
+                </div>
+            </div>
+        </div>
+
+        <a href="https://t.me/maingocanh" class="promo-cta" target="_blank">💬 Liên hệ đăng ký BotShop</a>
+    </div>
+</section>
+
+<!-- ========== FOOTER ========== -->
+<footer class="footer">
+    <p>Powered by <a href="https://t.me/maingocanh" target="_blank">BotShop</a> — Nền tảng bán hàng tự động trên Telegram</p>
+</footer>
+
+<!-- ========== TOAST ========== -->
+<div class="toast" id="toast"></div>
+
+<script>
+let lastResults = [];
+
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadQuota();
+
+    document.getElementById('linkInput').addEventListener('input', updateLinkCount);
+});
+
+// ===== Quota =====
+async function loadQuota() {
+    try {
+        const res = await fetch('/api/checker/quota');
+        const data = await res.json();
+        if (!data.enabled) {
+            document.getElementById('checkerCard').style.display = 'none';
+            document.getElementById('disabledOverlay').classList.add('active');
+            return;
+        }
+        updateQuotaDisplay(data.quota);
+    } catch {
+        document.getElementById('quotaText').textContent = 'Không tải được quota';
+    }
+}
+
+function updateQuotaDisplay(quota) {
+    const el = document.getElementById('quotaBadge');
+    const text = document.getElementById('quotaText');
+    text.textContent = `Còn ${quota.remaining}/${quota.daily} lượt`;
+    if (quota.remaining <= 0) {
+        el.classList.add('exhausted');
+        text.textContent = 'Hết lượt hôm nay';
+        document.getElementById('btnCheck').disabled = true;
+    } else {
+        el.classList.remove('exhausted');
+        document.getElementById('btnCheck').disabled = false;
+    }
+}
+
+// ===== Link count =====
+function updateLinkCount() {
+    const urls = getUrls();
+    document.getElementById('linkCount').textContent = `${urls.length} link${urls.length !== 1 ? 's' : ''}`;
+}
+
+function getUrls() {
+    return document.getElementById('linkInput').value
+        .split('\n')
+        .map(u => u.trim())
+        .filter(u => /^https?:\/\/.+/i.test(u));
+}
+
+// ===== Check =====
+async function checkLinks() {
+    const urls = getUrls();
+    if (urls.length === 0) {
+        showToast('Vui lòng paste ít nhất 1 link hợp lệ', true);
+        return;
+    }
+
+    const btn = document.getElementById('btnCheck');
+    const bar = document.getElementById('progressBar');
+    const fill = document.getElementById('progressFill');
+    const pText = document.getElementById('progressText');
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Đang check...';
+    bar.classList.add('active');
+    pText.classList.add('active');
+    fill.style.width = '10%';
+    pText.textContent = `Đang gửi ${urls.length} links...`;
+
+    try {
+        fill.style.width = '30%';
+        const res = await fetch('/api/checker/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls }),
+        });
+
+        fill.style.width = '70%';
+        const data = await res.json();
+
+        if (!res.ok) {
+            showToast(data.message || 'Lỗi khi check', true);
+            if (data.quota) updateQuotaDisplay(data.quota);
+            return;
+        }
+
+        fill.style.width = '100%';
+        pText.textContent = `Hoàn tất! ${data.stats.checked} checked, ${data.stats.cached} từ cache`;
+
+        lastResults = data.results;
+        renderResults(data.results);
+        updateQuotaDisplay(data.quota);
+
+        document.getElementById('btnExport').style.display = '';
+    } catch (err) {
+        showToast('Lỗi kết nối. Vui lòng thử lại.', true);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔍 Check Links';
+        setTimeout(() => {
+            bar.classList.remove('active');
+        }, 2000);
+    }
+}
+
+// ===== Results =====
+function renderResults(results) {
+    const section = document.getElementById('resultsSection');
+    const tbody = document.getElementById('resultsBody');
+    const stats = document.getElementById('resultsStats');
+
+    section.classList.add('active');
+
+    // Stats
+    const counts = {};
+    results.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+    const statusLabels = {
+        live: '✅ Live', redeemed: '❌ Redeemed', dead: '💀 Dead',
+        expired: '⏰ Expired', unknown: '❓ Unknown',
+        in_db_sold: '📦 Kho (đã giao)', in_db_available: '📦 Kho (chưa giao)',
+    };
+    stats.innerHTML = Object.entries(counts).map(([s, c]) => {
+        const cls = s.replace('in_db_sold','redeemed').replace('in_db_available','live');
+        return `<span class="stat-chip ${cls}">${statusLabels[s] || s}: ${c}</span>`;
+    }).join('');
+
+    // Table
+    tbody.innerHTML = results.map((r, i) => {
+        const statusCls = r.status || 'unknown';
+        const badge = statusLabels[r.status] || r.status;
+        const detail = r.detail || '—';
+        const urlShort = r.url.length > 60 ? r.url.slice(0, 57) + '...' : r.url;
+        return `<tr>
+            <td style="color:var(--text-muted)">${i + 1}</td>
+            <td class="url-cell" title="${escHtml(r.url)}">${escHtml(urlShort)}</td>
+            <td><span class="status-badge ${statusCls}">${badge}</span></td>
+            <td style="font-size:13px;color:var(--text-secondary)">${escHtml(detail)}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ===== Export =====
+function exportCSV() {
+    if (!lastResults.length) return;
+    const header = 'URL,Status,Detail,Source\n';
+    const rows = lastResults.map(r =>
+        `"${r.url}","${r.status}","${(r.detail||'').replace(/"/g,'""')}","${r.source||''}"`
+    ).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `link-check-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+}
+
+// ===== Utils =====
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, isError = false) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(() => { el.className = 'toast'; }, 4000);
+}
+</script>
+</body>
+</html>

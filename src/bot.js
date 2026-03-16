@@ -20,6 +20,7 @@ const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { setupDiscountHandler } = require('./handlers/discountHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
 const { setupScheduler } = require('./scheduler');
+const { setupCheckerAPI } = require('./handlers/checkerAPI');
 
 async function main() {
     console.log('🚀 Starting Telegram Sales Bot v2.0...');
@@ -83,6 +84,9 @@ async function main() {
 
     // Setup admin API
     setupAdminAPI(app, bot);
+
+    // Setup public link checker API
+    setupCheckerAPI(app);
 
     // Helper: set webhook via native fetch
     async function setTelegramWebhook() {

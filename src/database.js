@@ -199,6 +199,38 @@ async function initDatabase() {
         try { db.run(sql); } catch (e) { /* column already exists */ }
     }
 
+    // Checker quota table (public link checker)
+    try {
+        db.run(`
+            CREATE TABLE IF NOT EXISTS checker_quota (
+                ip TEXT NOT NULL,
+                date TEXT NOT NULL,
+                count INTEGER DEFAULT 0,
+                PRIMARY KEY (ip, date)
+            )
+        `);
+    } catch (e) { /* already exists */ }
+
+    // Cleanup old quota entries (keep 7 days)
+    try {
+        db.run(`DELETE FROM checker_quota WHERE date < date('now', '-7 days')`);
+    } catch (e) { /* ignore */ }
+
+    // Default checker settings
+    const checkerDefaults = {
+        checker_enabled: '1',
+        checker_daily_quota: '20',
+        checker_max_batch: '10',
+    };
+    for (const [key, value] of Object.entries(checkerDefaults)) {
+        try {
+            const existing = db.exec('SELECT value FROM settings WHERE key = ?', [key]);
+            if (!existing.length || !existing[0].values.length) {
+                db.run('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))', [key, value]);
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     saveDatabase();
     console.log(`✅ Database initialized (${DB_PATH})`);
     return db;
