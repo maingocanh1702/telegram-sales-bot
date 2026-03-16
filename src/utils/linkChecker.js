@@ -179,6 +179,9 @@ async function checkLinkedInRedeem(url) {
 
 /**
  * ScraperAPI specifically for LinkedIn — needs render=true + premium proxy
+ * Note: LinkedIn aggressively blocks scrapers. ScraperAPI may return 403.
+ * We try all tiers before giving up, and return 'unknown' (not 'error')
+ * because the link format is valid — we just can't verify its status.
  */
 async function checkLinkedInViaScraperApi(originalUrl, redeemUrl) {
     if (!SCRAPER_API_KEY) return null;
@@ -215,8 +218,10 @@ async function checkLinkedInViaScraperApi(originalUrl, redeemUrl) {
                 continue;
             }
 
+            // 403/429 from ScraperAPI — LinkedIn blocked this tier. Try next tier instead of stopping
             if (resp.status === 403 || resp.status === 429) {
-                return { url: originalUrl, status: 'error', httpStatus: resp.status, detail: `ScraperAPI error: HTTP ${resp.status}` };
+                console.warn(`[LinkChecker] LinkedIn ScraperAPI tier "${tier.label}" blocked (${resp.status}), trying next tier...`);
+                continue;
             }
         } catch (err) {
             console.warn(`[LinkChecker] LinkedIn ScraperAPI tier "${tier.label}" failed:`, err.message);
@@ -224,7 +229,17 @@ async function checkLinkedInViaScraperApi(originalUrl, redeemUrl) {
         }
     }
 
-    return null;
+    // All tiers failed — LinkedIn blocks all scrapers. Return unknown (not error)
+    // so the UI shows yellow "?" instead of red "X"
+    const coupon = extractLinkedInCoupon(originalUrl);
+    return {
+        url: originalUrl,
+        status: 'unknown',
+        httpStatus: 403,
+        detail: coupon
+            ? `LinkedIn coupon "${coupon}" — LinkedIn chặn kiểm tra tự động. Cần mở link thủ công để xác minh`
+            : 'LinkedIn chặn kiểm tra tự động. Cần mở link thủ công để xác minh',
+    };
 }
 
 /**
