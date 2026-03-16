@@ -902,7 +902,7 @@ function setupAdminAPI(app, bot) {
     app.put('/api/admin/discounts/:id', (req, res) => {
         try {
             const updates = {};
-            const allowed = ['code', 'type', 'value', 'product_id', 'product_ids', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'max_discount_qty', 'required_group_id', 'is_hidden', 'allowed_user_id', 'starts_at', 'expires_at', 'is_active'];
+            const allowed = ['code', 'type', 'value', 'product_id', 'product_ids', 'min_order_amount', 'max_discount_amount', 'max_uses', 'max_uses_per_user', 'max_discount_qty', 'required_group_id', 'is_hidden', 'allowed_user_id', 'starts_at', 'expires_at', 'is_active', 'is_new_user_only'];
 
             // Handle product_ids array from frontend
             if (req.body.product_ids !== undefined) {

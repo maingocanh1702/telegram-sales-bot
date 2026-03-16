@@ -96,6 +96,12 @@ function setupDiscountHandler(bot) {
             }
         }
 
+        // Check new-user-only restriction
+        if (discount.is_new_user_only && !db.isNewUser(userId)) {
+            sendDiscountError(bot, msg.chat.id, 'Mã này chỉ dành cho khách hàng mới.');
+            return;
+        }
+
         // Valid! Show preview
         const finalAmount = orderAmount - discountAmount;
         const discountLabel = discount.type === 'percent'
@@ -140,9 +146,20 @@ function promptDiscount(bot, data) {
         awaitingInput: false,
     });
 
+    // Check if new user has available new-user discount
+    let newUserHint = '';
+    if (db.isNewUser(userId)) {
+        const activeCodes = db.getActiveDiscountCodes();
+        const hasNewUserCode = activeCodes.some(c => c.is_new_user_only);
+        if (hasNewUserCode) {
+            newUserHint = '\n🎉 *Bạn có mã giảm giá dành cho khách mới!* Xem ngay tại /discount\n';
+        }
+    }
+
     const text = `🎟 **Bạn có mã giảm giá không?**\n\n` +
         `📦 SP: **${product ? product.name : 'N/A'}** x${data.quantity}\n` +
-        `💰 Tạm tính: **${formatPrice(orderAmount)}**\n\n` +
+        `💰 Tạm tính: **${formatPrice(orderAmount)}**\n` +
+        newUserHint + `\n` +
         `💡 Gõ /discount để xem mã giảm giá hiện có\n` +
         `Chọn bên dưới:`;
 
@@ -186,6 +203,9 @@ async function showAvailableDiscounts(bot, chatId, userId) {
     for (const c of allCodes) {
         // Skip codes restricted to a different user
         if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) continue;
+
+        // Skip new-user-only codes for existing customers
+        if (c.is_new_user_only && !db.isNewUser(userId)) continue;
 
         if (c.required_group_id) {
             const groupId = Number(c.required_group_id);
@@ -327,6 +347,9 @@ function formatDiscountLine(discount, groupNames = {}) {
     }
     if (discount.allowed_user_id) {
         line += `\n    👤 _Dành riêng cho bạn_`;
+    }
+    if (discount.is_new_user_only) {
+        line += `\n    🆕 _Dành cho khách hàng mới_`;
     }
     line += '\n';
     return line;

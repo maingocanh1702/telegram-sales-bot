@@ -1008,6 +1008,7 @@ Số Lượng Đang Hiện Có 10"
         <div class="form-group" style="grid-column:span 2"><label>Yêu cầu nhóm Telegram (Group ID)</label><input type="text" id="dRequiredGroupId" placeholder="VD: -1001234567890 (để trống = không yêu cầu)"></div>
         <div class="form-group" style="grid-column:span 2"><label>👤 Chỉ cho user (Telegram User ID)</label><input type="text" id="dAllowedUserId" placeholder="VD: 123456789 (để trống = tất cả)"><p class="hint">Chỉ user có Telegram ID này mới dùng được mã. Lấy ID từ tab Customers.</p></div>
         <div class="form-group" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="dIsHidden"> Ẩn mã — không hiển khi tìm kiếm, nhưng vẫn dùng được nếu biết mã</label></div>
+        <div class="form-group" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="dIsNewUserOnly"> 🆕 Chỉ khách mới — chỉ user chưa mua đơn nào thành công mới thấy và dùng được</label></div>
         <div class="form-group"><label>Bắt đầu</label><input type="datetime-local" id="dStartsAt"></div>
         <div class="form-group"><label>Hết hạn</label><input type="datetime-local" id="dExpiresAt"></div>
       </div>
@@ -2576,7 +2577,8 @@ Số Lượng Đang Hiện Có 10"
         let restrictions = '';
         if (d.required_group_id) restrictions += '<span style="font-size:10px;background:#3b82f6;color:#fff;padding:1px 5px;border-radius:4px;margin-right:3px">🔒 Group</span>';
         if (d.allowed_user_id) restrictions += `<span style="font-size:10px;background:#8b5cf6;color:#fff;padding:1px 5px;border-radius:4px;margin-right:3px">👤 ${d.allowed_user_id}</span>`;
-        if (d.is_hidden) restrictions += '<span style="font-size:10px;background:#6b7280;color:#fff;padding:1px 5px;border-radius:4px">👁 Ẩn</span>';
+        if (d.is_hidden) restrictions += '<span style="font-size:10px;background:#6b7280;color:#fff;padding:1px 5px;border-radius:4px;margin-right:3px">👁 Ẩn</span>';
+        if (d.is_new_user_only) restrictions += '<span style="font-size:10px;background:#10b981;color:#fff;padding:1px 5px;border-radius:4px">🆕 Mới</span>';
         let statusBadge;
         if (!d.is_active) {
           statusBadge = '<span class="badge badge-muted">Tắt</span>';
@@ -2685,6 +2687,7 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('dRequiredGroupId').value = d.required_group_id || '';
         document.getElementById('dAllowedUserId').value = d.allowed_user_id || '';
         document.getElementById('dIsHidden').checked = !!d.is_hidden;
+        document.getElementById('dIsNewUserOnly').checked = !!d.is_new_user_only;
         document.getElementById('dStartsAt').value = d.starts_at ? toLocalDatetime(d.starts_at) : '';
         document.getElementById('dExpiresAt').value = d.expires_at ? toLocalDatetime(d.expires_at) : '';
       } else {
@@ -2692,6 +2695,7 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('editDiscountId').value = '';
         ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dMaxDiscountQty','dRequiredGroupId','dAllowedUserId','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('dIsHidden').checked = false;
+        document.getElementById('dIsNewUserOnly').checked = false;
         document.getElementById('dType').value = 'percent';
       }
       document.getElementById('discountModal').classList.add('active');
@@ -2712,6 +2716,7 @@ Số Lượng Đang Hiện Có 10"
         required_group_id: document.getElementById('dRequiredGroupId').value.trim() || null,
         allowed_user_id: document.getElementById('dAllowedUserId').value.trim() || null,
         is_hidden: document.getElementById('dIsHidden').checked ? 1 : 0,
+        is_new_user_only: document.getElementById('dIsNewUserOnly').checked ? 1 : 0,
         starts_at: document.getElementById('dStartsAt').value ? new Date(document.getElementById('dStartsAt').value).toISOString() : null,
         expires_at: document.getElementById('dExpiresAt').value ? new Date(document.getElementById('dExpiresAt').value).toISOString() : null,
       };
