@@ -784,7 +784,7 @@ function setupAdminAPI(app, bot) {
 
     app.post('/api/admin/discounts', (req, res) => {
         try {
-            const { code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, starts_at, expires_at } = req.body;
+            const { code, value, type } = req.body;
             if (!code || !value) {
                 return res.status(400).json({ error: true, message: 'Code and value required', code: 'VALIDATION_ERROR' });
             }
@@ -796,10 +796,7 @@ function setupAdminAPI(app, bot) {
             if (existing) {
                 return res.status(400).json({ error: true, message: 'Mã giảm giá đã tồn tại', code: 'DUPLICATE_CODE' });
             }
-            const id = db.createDiscountCode({
-                code, type, value, product_id, min_order_amount, max_discount_amount,
-                max_uses, max_uses_per_user, starts_at, expires_at,
-            });
+            const id = db.createDiscountCode(req.body);
             res.json({ id, message: 'Discount code created' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
