@@ -1799,19 +1799,24 @@ Số Lượng Đang Hiện Có 10"
 
         const newCount = preRes.newUrls.length + (preRes.cached || []).length;
         const dbDupUrls = (preRes.dbDups || []).map(d => d.url);
-        html += `<div style="font-size:13px;color:var(--text-secondary);margin-top:8px">🆕 <strong>${newCount}</strong> link mới sẽ được check</div>`;
 
-        document.getElementById('dupReportTitle').textContent = `🔗 Phân tích ${preRes.total} links`;
-        document.getElementById('dupReportBody').innerHTML = html;
-
-        // Action buttons — options are about DB dups
-        let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Hủy</button>`;
-        if (hasDbDups) {
+        // Action buttons — smart based on context
+        let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+        if (hasDbDups && newCount === 0) {
+          // All links are in DB — no new links to check
+          html += `<div style="font-size:13px;color:var(--text-muted);margin-top:8px;font-style:italic">✅ Tất cả link đều đã có trong kho. Bạn có thể check lại validity nếu muốn.</div>`;
+          actionsHtml += ` <button class="btn btn-primary" onclick="executeCheckLinks(window._checkLinksData.urlsToCheck, window._checkLinksData.urlIndexMap, [])">Check validity ${preRes.dbDups.length} links</button>`;
+        } else if (hasDbDups && newCount > 0) {
+          html += `<div style="font-size:13px;color:var(--text-secondary);margin-top:8px">🆕 <strong>${newCount}</strong> link mới sẽ được check</div>`;
           actionsHtml += ` <button class="btn btn-ghost" onclick="executeCheckLinks(window._checkLinksData.urlsToCheck, window._checkLinksData.urlIndexMap, ${JSON.stringify(dbDupUrls)})" style="color:var(--text-secondary)">Bỏ qua ${preRes.dbDups.length} link trong kho, check ${newCount} mới</button>`;
           actionsHtml += ` <button class="btn btn-primary" onclick="executeCheckLinks(window._checkLinksData.urlsToCheck, window._checkLinksData.urlIndexMap, [])">Check luôn tất cả ${preRes.total} links</button>`;
         } else {
+          html += `<div style="font-size:13px;color:var(--text-secondary);margin-top:8px">🆕 <strong>${newCount}</strong> link sẽ được check</div>`;
           actionsHtml += ` <button class="btn btn-primary" onclick="executeCheckLinks(window._checkLinksData.urlsToCheck, window._checkLinksData.urlIndexMap, [])">Check ${newCount} links</button>`;
         }
+
+        document.getElementById('dupReportTitle').textContent = `🔗 Phân tích ${preRes.total} links`;
+        document.getElementById('dupReportBody').innerHTML = html;
         document.getElementById('dupReportActions').innerHTML = actionsHtml;
         return; // Wait for user choice
       } catch (e) {
