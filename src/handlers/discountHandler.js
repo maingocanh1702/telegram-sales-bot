@@ -226,10 +226,12 @@ async function showAvailableDiscounts(bot, chatId, userId) {
         return;
     }
 
-    const generalCodes = codes.filter(c => !c.product_id);
-    const productCodes = codes.filter(c => c.product_id);
+    // Categorize: all-product, single-product, multi-product
+    const generalCodes = codes.filter(c => !c.product_id && !c.product_ids);
+    const productCodes = codes.filter(c => c.product_id && !c.product_ids);
+    const multiProductCodes = codes.filter(c => c.product_ids);
 
-    // Group product codes by product
+    // Group single-product codes by product
     const byProduct = {};
     for (const c of productCodes) {
         const key = c.product_name || `SP #${c.product_id}`;
@@ -247,6 +249,23 @@ async function showAvailableDiscounts(bot, chatId, userId) {
         text += '\n';
     }
 
+    // Multi-product codes
+    if (multiProductCodes.length > 0) {
+        for (const c of multiProductCodes) {
+            let productNames = [];
+            try {
+                const ids = JSON.parse(c.product_ids);
+                const products = db.getProductNamesByIds(ids);
+                productNames = products.map(p => p.name);
+            } catch {}
+            const label = productNames.length > 0 ? productNames.join(', ') : 'Nhiều SP';
+            text += `📦 **${label}:**\n`;
+            text += formatDiscountLine(c, groupNames);
+            text += '\n';
+        }
+    }
+
+    // Single-product codes
     for (const [productName, pCodes] of Object.entries(byProduct)) {
         text += `📦 **${productName}:**\n`;
         for (const c of pCodes) {

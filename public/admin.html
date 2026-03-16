@@ -994,9 +994,14 @@ Số Lượng Đang Hiện Có 10"
           </select>
         </div>
         <div class="form-group"><label>Giá trị</label><input type="number" id="dValue" placeholder="50 (= 50% hoặc 50,000đ)"></div>
-        <div class="form-group">
-          <label>Áp dụng cho SP</label>
-          <select id="dProductId"><option value="">— Tất cả sản phẩm —</option></select>
+        <div class="form-group" style="grid-column:span 2">
+          <label>Áp dụng cho sản phẩm</label>
+          <div id="dProductList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;flex-direction:column;gap:4px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;font-size:13px">
+              <input type="checkbox" id="dProductAll" checked onchange="toggleAllProducts(this)"> <strong>— Tất cả sản phẩm —</strong>
+            </label>
+          </div>
+          <p class="hint" style="margin-top:4px;font-size:11px;opacity:0.6">Chọn nhiều sản phẩm hoặc "Tất cả" để áp dụng toàn bộ</p>
         </div>
         <div class="form-group"><label>Đơn tối thiểu (₫)</label><input type="number" id="dMinOrder" placeholder="0"></div>
         <div class="form-group"><label>Giảm tối đa (₫)</label><input type="number" id="dMaxDiscount" placeholder="Không giới hạn"></div>
@@ -2407,15 +2412,27 @@ Số Lượng Đang Hiện Có 10"
       container.innerHTML = html;
     }
 
+    function toggleAllProducts(allCb) {
+      document.querySelectorAll('.dProductCb').forEach(cb => {
+        cb.checked = false;
+        cb.disabled = allCb.checked;
+      });
+    }
+
     async function openDiscountModal(editId) {
-      // Populate product dropdown
+      // Populate product checkboxes
       if (!productsCache.length) {
         try { productsCache = await apiFetch('/products'); } catch(e) {}
       }
-      const sel = document.getElementById('dProductId');
-      sel.innerHTML = '<option value="">— Tất cả sản phẩm —</option>';
+      const list = document.getElementById('dProductList');
+      // Keep "All" checkbox, then add product checkboxes
+      list.innerHTML = `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;font-size:13px">
+        <input type="checkbox" id="dProductAll" checked onchange="toggleAllProducts(this)"> <strong>— Tất cả sản phẩm —</strong>
+      </label>`;
       productsCache.forEach(p => {
-        sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+        list.innerHTML += `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;font-size:13px">
+          <input type="checkbox" class="dProductCb" value="${p.id}" disabled> ${p.name}
+        </label>`;
       });
 
       if (editId) {
@@ -2426,7 +2443,26 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('dCode').value = d.code;
         document.getElementById('dType').value = d.type;
         document.getElementById('dValue').value = d.value;
-        document.getElementById('dProductId').value = d.product_id || '';
+
+        // Restore product selection
+        let selectedIds = [];
+        if (d.product_ids) {
+          try { selectedIds = JSON.parse(d.product_ids); } catch {}
+        } else if (d.product_id) {
+          selectedIds = [d.product_id];
+        }
+        const allCb = document.getElementById('dProductAll');
+        if (selectedIds.length > 0) {
+          allCb.checked = false;
+          document.querySelectorAll('.dProductCb').forEach(cb => {
+            cb.disabled = false;
+            cb.checked = selectedIds.includes(parseInt(cb.value));
+          });
+        } else {
+          allCb.checked = true;
+          toggleAllProducts(allCb);
+        }
+
         document.getElementById('dMinOrder').value = d.min_order_amount || '';
         document.getElementById('dMaxDiscount').value = d.max_discount_amount || '';
         document.getElementById('dMaxUses').value = d.max_uses || '';
@@ -2443,7 +2479,8 @@ Số Lượng Đang Hiện Có 10"
         ['dCode','dValue','dMinOrder','dMaxDiscount','dMaxUses','dMaxUsesPerUser','dMaxDiscountQty','dRequiredGroupId','dAllowedUserId','dStartsAt','dExpiresAt'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('dIsHidden').checked = false;
         document.getElementById('dType').value = 'percent';
-        document.getElementById('dProductId').value = '';
+        document.getElementById('dProductAll').checked = true;
+        toggleAllProducts(document.getElementById('dProductAll'));
       }
       document.getElementById('discountModal').classList.add('active');
     }
@@ -2454,7 +2491,7 @@ Số Lượng Đang Hiện Có 10"
         code: document.getElementById('dCode').value,
         type: document.getElementById('dType').value,
         value: parseInt(document.getElementById('dValue').value) || 0,
-        product_id: document.getElementById('dProductId').value ? parseInt(document.getElementById('dProductId').value) : null,
+        product_ids: document.getElementById('dProductAll').checked ? [] : [...document.querySelectorAll('.dProductCb:checked')].map(cb => parseInt(cb.value)),
         min_order_amount: parseInt(document.getElementById('dMinOrder').value) || 0,
         max_discount_amount: parseInt(document.getElementById('dMaxDiscount').value) || null,
         max_uses: parseInt(document.getElementById('dMaxUses').value) || 0,
