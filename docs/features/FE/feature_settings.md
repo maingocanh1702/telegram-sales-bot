@@ -1,99 +1,116 @@
-# Feature: General Settings
+# Feature: Cài đặt chung (General Settings)
 
-**BE Tech Spec:** [feature_settings_tech.md](../BE/feature_settings_tech.md)
-**Priority:** P0
-**Status:** ✅ Done
+> **Phiên bản**: v1.0 — Viết từ code thực tế (`adminAPI.js` + `database.js`)
 
 ---
 
 ## 1. Mô tả
 
-Admin cấu hình các tham số hệ thống: thông tin ngân hàng (legacy), public link checker, và các config chung khác. Sử dụng key-value store trong SQLite.
+Màn hình Cài đặt chung cho phép admin cấu hình các thông số vận hành hệ thống từ Admin Panel. Bao gồm thông tin ngân hàng (fallback), bot, link checker, và các tuỳ chọn khác.
 
 ---
 
 ## 2. Use Cases
 
-### UC-1: Cấu hình ngân hàng (Legacy)
-
-1. Admin tab "Cài đặt" → section "Ngân hàng"
-2. Form: mã bank, tên bank, STK, tên chủ TK
-3. Save → update settings table
-
-### UC-2: Cấu hình Link Checker
-
-1. Admin tab "Cài đặt" → section "Public Link Checker"
-2. Toggle bật/tắt
-3. Nhập: quota/ngày, max links/batch
-4. Save
-
-### UC-3: Xem cấu hình hiện tại
-
-1. Tab "Cài đặt" → load all settings
-2. Hiển thị form pre-filled với values hiện tại
+| # | Use Case | Mô tả |
+| - | -------- | ----- |
+| UC-1 | Xem cài đặt hiện tại | Admin mở trang Settings → hiển thị tất cả settings với giá trị hiện tại |
+| UC-2 | Sửa cài đặt | Admin thay đổi giá trị → Save → cập nhật DB |
+| UC-3 | Fallback bank config | Nếu chưa có bank settings trong DB → hiển thị từ config.js/.env |
 
 ### Edge Cases
 
-| Case | Xử lý |
-|------|-------|
-| Save rỗng | Cho phép (clear value) |
-| Quota = 0 | Checker vẫn bật nhưng 0 lượt |
+| # | Category | Case | Xử lý |
+| - | -------- | ---- | ----- |
+| 1 | Validation | Giá trị rỗng cho field bắt buộc | Hiện inline error, không cho save |
+| 2 | Security | Key không nằm trong whitelist | API trả 400, FE hiện toast error |
+| 3 | Data Integrity | Lưu checker_daily_quota = 0 | Cho phép (vô hiệu hoá checker quota) |
+| 4 | Concurrent | 2 admin sửa cùng lúc | Last-write-wins (key-value store) |
+| 5 | Fallback | DB chưa có setting nào | Hiển thị defaults từ config.js |
+| 6 | Cross-Feature | Đổi bank settings ở Settings vs Bank Management | Settings chỉ là fallback, Bank Management ưu tiên hơn |
+| 7 | Input | Nhập ký tự đặc biệt vào bank_name | Sanitize trước khi lưu |
+| 8 | UX | Save thành công | Toast "Đã lưu thành công" + auto-dismiss 3s |
 
 ---
 
 ## 3. Screens & States
 
-### Admin — Settings Tab
+### 3.1 Settings Page — Ready
 
-| State | Hiển thị |
-|-------|---------|
-| **Loading** | Skeleton form |
-| **Data** | Form sections pre-filled |
-| **Error** | Toast "Lỗi tải cài đặt" |
+**Layout**: 1 trang duy nhất, chia sections theo nhóm
 
-### Settings Sections
+| Section | Fields | Kiểu input |
+| ------- | ------ | ---------- |
+| **Ngân hàng (Fallback)** | `bank_id`, `bank_code`, `bank_name`, `bank_account` | Text inputs |
+| **Link Checker** | `checker_enabled` (toggle), `checker_daily_quota` (number) | Toggle + Number |
+| **Thông báo** | `welcome_message`, `payment_timeout_minutes` | Textarea + Number |
 
-#### 🏦 Ngân hàng
+**CTA**: Nút "💾 Lưu cài đặt" ở cuối trang
 
-| Field | Type | Mô tả |
-|-------|------|-------|
-| Mã ngân hàng | select | VCB, MB, TPB... |
-| Tên ngân hàng | text | Auto-fill từ mã |
-| Số tài khoản | text | Numeric |
-| Tên chủ tài khoản | text | Uppercase |
+### 3.2 Settings Page — Loading
 
-#### 🔗 Public Link Checker
+- Skeleton screens cho mỗi input field (shimmer)
+- Nút Save disabled
 
-| Field | Type | Mô tả |
-|-------|------|-------|
-| Bật/tắt | toggle | Default ON |
-| Quota/ngày/IP | number | Default 20 |
-| Max links/batch | number | Default 10 |
+### 3.3 Settings Page — Error
 
----
+- Inline error dưới field không hợp lệ (đỏ, italic)
+- Toast error cho lỗi server: "Không thể lưu cài đặt. Vui lòng thử lại"
 
-## 4. Config Priority Visual
+### 3.4 Settings Page — Empty
 
-```
-┌──────────────────────────────────┐
-│ 1. Admin Panel Settings          │  ← Runtime, highest priority
-│    (SQLite settings table)       │
-├──────────────────────────────────┤
-│ 2. Environment Variables         │  ← Deploy-time
-│    (.env file)                   │
-├──────────────────────────────────┤
-│ 3. Code Defaults                 │  ← Code-level
-│    (config.js)                   │
-└──────────────────────────────────┘
-```
+> **N/A** — Page luôn có defaults từ config.js, không bao giờ empty
 
 ---
 
-## 5. Acceptance Criteria
+## 4. API Contract (from actual code)
 
-- [x] Settings form loads current values
-- [x] Bank settings: mã bank, STK, tên chủ TK
-- [x] Checker settings: toggle, quota, batch
-- [x] Save: partial update (only changed fields)
-- [x] Toast success/error feedback
-- [x] Settings persist across server restart
+### GET /api/admin/settings
+
+**Response**: Object phẳng với fallback chain
+
+```
+DB settings → config.js → environment variables → hardcoded defaults
+```
+
+| Field | Source priority |
+| ----- | -------------- |
+| `bank_id` | DB → config.bank.id → '' |
+| `bank_code` | DB → '' |
+| `bank_name` | config.bank.name → '' |
+| `bank_account` | config.bank.account → '' |
+| `checker_enabled` | DB → 'true' |
+| `checker_daily_quota` | DB → '10' |
+
+### PUT /api/admin/settings
+
+**Request**: JSON object `{ key: value, ... }`
+
+**Whitelist** (chỉ các key sau được phép cập nhật):
+
+```
+bank_id, bank_code, bank_name, bank_account,
+checker_enabled, checker_daily_quota,
+welcome_message, payment_timeout_minutes
+```
+
+Key ngoài whitelist → bị reject với 400
+
+---
+
+## 5. State Coverage Matrix
+
+| Screen | Loading | Ready | Error | Empty |
+| ------ | ------- | ----- | ----- | ----- |
+| Settings Page | ✅ Skeleton | ✅ Form + data | ✅ Inline + toast | N/A (always has defaults) |
+
+---
+
+## 6. Acceptance Criteria
+
+- [ ] Load settings hiển thị đúng giá trị từ DB/config fallback
+- [ ] Sửa và Save → toast thành công, reload hiện giá trị mới
+- [ ] Key ngoài whitelist → toast error "Không được phép"
+- [ ] Skeleton loading khi đang fetch
+- [ ] Inline validation cho number fields (checker_daily_quota ≥ 0)
+- [ ] Responsive: form readable trên 375px mobile

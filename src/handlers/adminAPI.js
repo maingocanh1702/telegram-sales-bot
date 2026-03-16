@@ -23,22 +23,22 @@ function setupAdminAPI(app, bot) {
     app.get('/api/admin/dashboard', (req, res) => {
         try {
             const products = db.getAllProductsStock();
-            const orders = db.getRecentOrders(50);
+            const recentOrders = db.getRecentOrders(20);
+            const orderStats = db.getDashboardStats();
 
             const totalProducts = products.length;
             const totalStock = products.reduce((sum, p) => sum + p.available, 0);
             const totalSold = products.reduce((sum, p) => sum + p.sold, 0);
 
-            const pendingOrders = orders.filter(o => o.status === 'pending').length;
-            const paidOrders = orders.filter(o => o.status === 'paid' || o.status === 'delivered').length;
-            const totalRevenue = orders
-                .filter(o => o.status === 'paid' || o.status === 'delivered')
-                .reduce((sum, o) => sum + o.total_amount, 0);
-
             res.json({
-                stats: { totalProducts, totalStock, totalSold, pendingOrders, paidOrders, totalRevenue },
+                stats: {
+                    totalProducts,
+                    totalStock,
+                    totalSold,
+                    ...orderStats,
+                },
                 products,
-                recentOrders: orders.slice(0, 20),
+                recentOrders,
             });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
@@ -746,7 +746,9 @@ function setupAdminAPI(app, bot) {
 
     app.get('/api/admin/customers', (req, res) => {
         try {
-            res.json(db.getCustomerStats());
+            const page = Math.max(1, parseInt(req.query.page) || 1);
+            const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+            res.json(db.getCustomerStats(page, limit));
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
