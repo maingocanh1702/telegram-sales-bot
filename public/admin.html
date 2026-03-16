@@ -2351,6 +2351,11 @@ Số Lượng Đang Hiện Có 10"
         const productLabel = d.product_name ? d.product_name : '<span style="color:var(--text-muted)">Tất cả</span>';
         const usageLabel = d.max_uses > 0 ? `${d.used_count}/${d.max_uses}` : `${d.used_count}/∞`;
         const isExpired = d.expires_at && new Date(d.expires_at) < new Date();
+        // Restriction badges
+        let restrictions = '';
+        if (d.required_group_id) restrictions += '<span style="font-size:10px;background:#3b82f6;color:#fff;padding:1px 5px;border-radius:4px;margin-right:3px">🔒 Group</span>';
+        if (d.allowed_user_id) restrictions += `<span style="font-size:10px;background:#8b5cf6;color:#fff;padding:1px 5px;border-radius:4px;margin-right:3px">👤 ${d.allowed_user_id}</span>`;
+        if (d.is_hidden) restrictions += '<span style="font-size:10px;background:#6b7280;color:#fff;padding:1px 5px;border-radius:4px">👁 Ẩn</span>';
         let statusBadge;
         if (!d.is_active) {
           statusBadge = '<span class="badge badge-muted">Tắt</span>';
@@ -2361,7 +2366,7 @@ Số Lượng Đang Hiện Có 10"
         }
         const expiresLabel = d.expires_at ? new Date(d.expires_at).toLocaleDateString('vi-VN') : '—';
         html += `<tr>
-          <td><strong>${d.code}</strong></td>
+          <td><strong>${d.code}</strong>${restrictions ? '<br>' + restrictions : ''}</td>
           <td>${d.type === 'percent' ? '📊 %' : '💰 VNĐ'}</td>
           <td><strong>${valueLabel}</strong></td>
           <td>${productLabel}</td>
