@@ -19,6 +19,7 @@ const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler
 const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { setupDiscountHandler } = require('./handlers/discountHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
+const { startSepayPoller } = require('./utils/sepayPoller');
 const { setupScheduler } = require('./scheduler');
 const { setupCheckerAPI } = require('./handlers/checkerAPI');
 
@@ -149,6 +150,9 @@ async function main() {
 
     // 8. Start order expiry checker
     startOrderExpiryCheck(bot);
+
+    // 9. Start SePay polling backup (reconciles missed webhooks)
+    startSepayPoller(bot);
 
     // 9. Bot info
     const botInfo = await bot.getMe();
