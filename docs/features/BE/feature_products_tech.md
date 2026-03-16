@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS products (
   invite_slots INTEGER DEFAULT 0,            -- invite type: total slots
   delivery_hours INTEGER DEFAULT 24,         -- invite/preorder: SLA hours
   subscription_days INTEGER,                 -- auto-set expiry
+  warranty_days INTEGER,                     -- warranty period (days)
   customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]',
   sort_order INTEGER DEFAULT 0,              -- drag-drop reorder
   preorder_stock INTEGER DEFAULT 0,          -- preorder type: total stock
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   "inviteSlots": 0,
   "deliveryHours": 24,
   "subscriptionDays": 30,
+  "warrantyDays": 30,
   "preorderStock": 0,
   "customerFields": [{"key":"email","label":"Email","type":"email"}],
   "maxPerUser": 0,
@@ -96,7 +98,8 @@ Chỉ update fields có trong request body:
 // Allowed update fields:
 name, price, description, note, is_active,
 credentialFields, productType, inviteSlots, deliveryHours,
-subscriptionDays, customerFields, preorderStock, maxPerUser, isFeatured
+subscriptionDays, customerFields, preorderStock, maxPerUser, isFeatured,
+warrantyDays
 ```
 
 #### DELETE `/api/admin/products/:id` — Smart Delete
@@ -160,7 +163,7 @@ END as available
 ```javascript
 addProduct(name, price, description, note, categoryId,
            credentialFields, productType, inviteSlots,
-           deliveryHours, subscriptionDays, preorderStock)
+           deliveryHours, subscriptionDays, preorderStock, warrantyDays)
 // Default credential_fields: [{key:'username',...},{key:'password',...}]
 // Returns: id
 

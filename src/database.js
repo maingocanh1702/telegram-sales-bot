@@ -61,6 +61,7 @@ async function initDatabase() {
       invite_slots INTEGER DEFAULT 0,
       delivery_hours INTEGER DEFAULT 24,
       subscription_days INTEGER,
+      warranty_days INTEGER,
       customer_fields TEXT DEFAULT '[{"key":"email","label":"Email","type":"email"}]',
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
@@ -192,6 +193,7 @@ async function initDatabase() {
         `ALTER TABLE discount_codes ADD COLUMN is_hidden INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN allowed_user_id TEXT`,
         `ALTER TABLE products ADD COLUMN is_featured INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN warranty_days INTEGER`,
         `ALTER TABLE discount_codes ADD COLUMN product_ids TEXT`,
         `ALTER TABLE discount_codes ADD COLUMN is_new_user_only INTEGER DEFAULT 0`,
     ];
@@ -387,14 +389,14 @@ function getProductById(id) {
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null, preorderStock = 0) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null, preorderStock = 0, warrantyDays = null) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, preorder_stock, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays, preorderStock]
+        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, preorder_stock, warranty_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays, preorderStock, warrantyDays]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();

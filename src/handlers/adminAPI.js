@@ -76,7 +76,8 @@ function setupAdminAPI(app, bot) {
             }
             const subDays = subscriptionDays ? parseInt(subscriptionDays) : null;
             const preorderStockVal = parseInt(req.body.preorderStock) || 0;
-            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays, preorderStockVal);
+            const warrantyDaysVal = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
+            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays, preorderStockVal, warrantyDaysVal);
             // Save customer_fields for invite/preorder
             if (customerFields && (productType === 'invite' || productType === 'preorder')) {
                 db.updateProduct(id, { customer_fields: JSON.stringify(customerFields) });
@@ -112,6 +113,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.preorderStock !== undefined) updates.preorder_stock = parseInt(req.body.preorderStock) || 0;
             if (req.body.maxPerUser !== undefined) updates.max_per_user = parseInt(req.body.maxPerUser) || 0;
             if (req.body.isFeatured !== undefined) updates.is_featured = req.body.isFeatured ? 1 : 0;
+            if (req.body.warrantyDays !== undefined) updates.warranty_days = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {
