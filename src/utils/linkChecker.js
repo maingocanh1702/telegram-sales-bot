@@ -3,9 +3,11 @@
  * Check if credential links (gift codes, redeem URLs, etc.) are still valid
  *
  * Supports:
- * - Claude.ai gift/redeem links (via API + page analysis)
- * - Generic URLs (via HTTP status check)
+ * - Claude.ai gift/redeem links (via API + page analysis + ScraperAPI)
+ * - Generic URLs (via HTTP status check + ScraperAPI fallback)
  */
+
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
 const BROWSER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -59,12 +61,25 @@ async function checkClaudeGift(url, code) {
         }
     }
 
+    // Strategy 4: ScraperAPI fallback (bypasses Cloudflare)
+    if (SCRAPER_API_KEY) {
+        try {
+            console.log(`[LinkChecker] Using ScraperAPI for ${url}`);
+            const result = await checkViaScraperApi(url);
+            if (result) return result;
+        } catch (err) {
+            console.warn(`[LinkChecker] ScraperAPI failed:`, err.message);
+        }
+    }
+
     // All strategies failed
     return {
         url,
         status: 'cf_blocked',
         httpStatus: 403,
-        detail: 'Cloudflare chặn — cần mở link thủ công để kiểm tra',
+        detail: SCRAPER_API_KEY
+            ? 'Tất cả strategies đều thất bại — cần mở link thủ công'
+            : 'Cloudflare chặn — thêm SCRAPER_API_KEY vào .env để bypass',
     };
 }
 
@@ -326,12 +341,56 @@ async function checkGenericUrl(url) {
         });
 
         const text = await resp.text();
-        return analyzeTextContent(url, resp.status, text);
+        const result = analyzeTextContent(url, resp.status, text);
+
+        // If Cloudflare blocked, try ScraperAPI
+        if (result.status === 'cf_blocked' && SCRAPER_API_KEY) {
+            console.log(`[LinkChecker] Generic URL CF blocked, trying ScraperAPI: ${url}`);
+            const scraperResult = await checkViaScraperApi(url);
+            if (scraperResult) return scraperResult;
+        }
+
+        return result;
     } catch (err) {
         if (err.name === 'TimeoutError' || err.message?.includes('timeout')) {
             return { url, status: 'timeout', httpStatus: 0, detail: 'Timeout (8s)' };
         }
         return { url, status: 'error', httpStatus: 0, detail: err.message };
+    }
+}
+
+/**
+ * ScraperAPI fallback — bypasses Cloudflare via proxy + JS rendering
+ */
+async function checkViaScraperApi(url) {
+    if (!SCRAPER_API_KEY) return null;
+
+    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true&country_code=us`;
+
+    try {
+        const resp = await fetch(scraperUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(30000), // ScraperAPI can be slow with JS rendering
+        });
+
+        if (resp.status === 200) {
+            const text = await resp.text();
+            const result = analyzeTextContent(url, 200, text);
+            // If ScraperAPI returned the page but we still see Cloudflare, it didn't bypass
+            if (result.status === 'cf_blocked') {
+                return { url, status: 'cf_blocked', httpStatus: 403, detail: 'ScraperAPI cũng không bypass được Cloudflare' };
+            }
+            return result;
+        }
+
+        if (resp.status === 403 || resp.status === 429) {
+            return { url, status: 'error', httpStatus: resp.status, detail: `ScraperAPI error: HTTP ${resp.status} (hết credits hoặc rate limit)` };
+        }
+
+        return null;
+    } catch (err) {
+        console.warn(`[LinkChecker] ScraperAPI fetch error:`, err.message);
+        return null;
     }
 }
 
