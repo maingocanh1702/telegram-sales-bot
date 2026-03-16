@@ -179,6 +179,7 @@ async function initDatabase() {
         `ALTER TABLE discount_codes ADD COLUMN max_discount_qty INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN required_group_id TEXT`,
         `ALTER TABLE discount_codes ADD COLUMN is_hidden INTEGER DEFAULT 0`,
+        `ALTER TABLE discount_codes ADD COLUMN allowed_user_id TEXT`,
         `ALTER TABLE products ADD COLUMN is_featured INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
@@ -823,8 +824,8 @@ function getBankConfig() {
 
 function createDiscountCode(data) {
     db.run(
-        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, starts_at, expires_at, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, allowed_user_id, starts_at, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.code.toUpperCase().trim(),
             data.type || 'percent',
@@ -837,6 +838,7 @@ function createDiscountCode(data) {
             parseInt(data.max_discount_qty) || 0,
             data.required_group_id || null,
             data.is_hidden ? 1 : 0,
+            data.allowed_user_id ? String(data.allowed_user_id).trim() : null,
             data.starts_at || null,
             data.expires_at || null,
             data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
@@ -952,6 +954,11 @@ function validateDiscountCode(code, userId, orderAmount, productId, quantity, un
         if (userUseCount >= discount.max_uses_per_user) {
             return { valid: false, reason: 'Bạn đã sử dụng mã này đạt giới hạn.' };
         }
+    }
+
+    // Check allowed user restriction
+    if (discount.allowed_user_id && String(discount.allowed_user_id) !== String(userId)) {
+        return { valid: false, reason: 'Mã này chỉ dành cho một người dùng cụ thể.' };
     }
 
     // Check product-specific discount
