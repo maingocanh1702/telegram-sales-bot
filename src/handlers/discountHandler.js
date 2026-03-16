@@ -297,7 +297,7 @@ function formatDiscountLine(discount, groupNames = {}) {
         line += ` | HSD: ${day}/${month}`;
     }
     if (discount.required_group_id && groupNames[discount.required_group_id]) {
-        line += `\n    🔒 _Dành cho nhóm: ${groupNames[discount.required_group_id]}_`;
+        line += `\n    🔒 _Chỉ cho thành viên group: ${groupNames[discount.required_group_id]}_`;
     }
     if (discount.allowed_user_id) {
         line += `\n    👤 _Dành riêng cho bạn_`;
