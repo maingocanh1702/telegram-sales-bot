@@ -2,7 +2,7 @@
 
 **Product Spec:** [feature_bank_management.md](../FE/feature_bank_management.md)
 **Backend:** Node.js + sql.js (SQLite)
-**Handler:** `adminAPI.js`, `database.js`
+**Handler:** `src/handlers/adminAPI.js` → `src/database.js`
 
 ---
 
@@ -13,76 +13,145 @@
 ```sql
 CREATE TABLE IF NOT EXISTS bank_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  bank_code TEXT NOT NULL,        -- Vietcombank, MBBank, TPBank...
-  bank_name TEXT NOT NULL,
-  account_no TEXT NOT NULL,
-  account_name TEXT NOT NULL,
-  is_primary INTEGER DEFAULT 0,   -- 1 = tài khoản chính nhận tiền
-  is_active INTEGER DEFAULT 1,
-  sort_order INTEGER DEFAULT 0,
+  bank_id TEXT NOT NULL,          -- ID ngân hàng cho VietQR (VD: "970436")
+  bank_code TEXT NOT NULL,        -- Mã rút gọn (VD: "VCB", "MB", "TPB")
+  bank_name TEXT NOT NULL,        -- Tên đầy đủ (VD: "Vietcombank")
+  account_no TEXT NOT NULL,       -- Số tài khoản
+  account_name TEXT NOT NULL,     -- Tên chủ tài khoản (uppercase)
+  is_active INTEGER DEFAULT 0,   -- 0 = inactive, 1 = active (chỉ 1 TK active)
   created_at TEXT DEFAULT (datetime('now'))
 );
 ```
 
-### Settings (bảng `settings`)
-
-| Key | Mô tả |
-|-----|-------|
-| `bank_id` | Legacy: bank ID cho VietQR |
-| `bank_code` | Legacy: mã ngân hàng |
-| `bank_name` | Legacy: tên ngân hàng |
-| `bank_account_no` | Legacy: STK |
-| `bank_account_name` | Legacy: tên chủ TK |
-
-> ⚠️ Hệ thống đang chuyển từ settings-based sang `bank_accounts` table. Legacy settings vẫn hoạt động.
+> ⚠️ **Chỉ 1 TK active tại một thời điểm** — dùng để generate VietQR cho đơn hàng.
 
 ---
 
 ## 2. API Contract
 
-### Bank Accounts CRUD
+### GET `/api/admin/bank-accounts` — List all
 
-| Method | Path | Mô tả |
-|--------|------|-------|
-| GET | `/api/admin/bank-accounts` | List all bank accounts |
-| POST | `/api/admin/bank-accounts` | Add bank account |
-| PUT | `/api/admin/bank-accounts/:id` | Update bank account |
-| DELETE | `/api/admin/bank-accounts/:id` | Delete (nếu không có orders) |
-| POST | `/api/admin/bank-accounts/:id/set-primary` | Set as primary |
+**Response 200:**
 
-### VietQR Integration
+```json
+[
+  {
+    "id": 1,
+    "bank_id": "970436",
+    "bank_code": "VCB",
+    "bank_name": "Vietcombank",
+    "account_no": "1234567890",
+    "account_name": "NGUYEN VAN A",
+    "is_active": 1,
+    "created_at": "2026-01-15 08:00:00"
+  },
+  {
+    "id": 2,
+    "bank_id": "970422",
+    "bank_code": "MB",
+    "bank_name": "MBBank",
+    "account_no": "9876543210",
+    "account_name": "NGUYEN VAN A",
+    "is_active": 0,
+    "created_at": "2026-02-10 10:00:00"
+  }
+]
+```
 
-- **Format:** `https://img.vietqr.io/image/{bankCode}-{accountNo}-print.png?amount={amount}&addInfo={paymentCode}&accountName={accountName}`
-- Bank code mapping: Vietcombank = `VCB`, MBBank = `MB`, TPBank = `TPB`...
-- Mỗi order dùng primary bank account hiện tại
+> Sort: `is_active DESC, created_at DESC` (active account luôn đứng đầu)
+
+### POST `/api/admin/bank-accounts` — Add bank
+
+**Request:**
+
+```json
+{
+  "bank_id": "970436",
+  "bank_code": "VCB",
+  "bank_name": "Vietcombank",
+  "account_no": "1234567890",
+  "account_name": "NGUYEN VAN A"
+}
+```
+
+**Validation:** `bank_code`, `account_no`, `account_name` required (400 nếu thiếu)
+
+**Response 200:**
+
+```json
+{ "message": "Đã thêm tài khoản", "id": 3 }
+```
+
+**Logic đặc biệt:** Nếu đây là TK **đầu tiên** → tự động **auto-activate** (is_active = 1).
+
+### POST `/api/admin/bank-accounts/:id/activate` — Kích hoạt TK
+
+**Response 200:**
+
+```json
+{ "message": "Đã kích hoạt tài khoản" }
+```
+
+**Logic:**
+1. `UPDATE bank_accounts SET is_active = 0` (deactivate ALL)
+2. `UPDATE bank_accounts SET is_active = 1 WHERE id = ?` (activate target)
+
+> ⚠️ **Không có PUT/UPDATE endpoint** — chỉ add/delete/activate. Muốn sửa thông tin → xóa + thêm mới.
+
+### DELETE `/api/admin/bank-accounts/:id` — Xóa TK
+
+**Response 200:**
+
+```json
+{ "message": "Đã xóa" }
+```
+
+**Logic đặc biệt:** Nếu xóa TK đang **active**:
+1. Xóa TK
+2. Tìm TK còn lại (`SELECT id FROM bank_accounts LIMIT 1`)
+3. Auto-promote TK đó thành active
 
 ---
 
 ## 3. Backend Implementation
 
-### Bank Account Logic
+### Functions (`database.js`)
 
 ```javascript
-// getPrimaryBank(): 
-//   SELECT * FROM bank_accounts WHERE is_primary = 1 AND is_active = 1
-//   Fallback: settings table (legacy)
+// addBankAccount(data)
+//   INSERT is_active = 0
+//   Nếu là TK đầu tiên (COUNT = 1) → auto-activate
+//   Return: id
 
-// setBankPrimary(id):
-//   Transaction:
-//     UPDATE bank_accounts SET is_primary = 0 WHERE is_primary = 1
-//     UPDATE bank_accounts SET is_primary = 1 WHERE id = ?
+// getAllBankAccounts()
+//   SELECT * ORDER BY is_active DESC, created_at DESC
 
-// generateVietQR(amount, paymentCode):
-//   Get primary bank → construct VietQR URL
-//   Returns: { qrUrl, bankName, accountNo, accountName }
+// setActiveBankAccount(id)
+//   UPDATE ALL is_active = 0 → UPDATE target is_active = 1
+
+// deleteBankAccount(id)
+//   Xóa TK
+//   Nếu TK bị xóa là active → auto-promote TK còn lại đầu tiên
+
+// getBankConfig()
+//   1. SELECT active bank from bank_accounts
+//   2. Fallback: return config.bank (env vars)
+//   Return: { id, code, name, accountNo, accountName }
 ```
 
-### SePay Webhook Matching
+### VietQR URL Generation (used in order creation)
 
 ```javascript
-// Webhook nhận transferAmount + content
-// Match: content chứa payment_code (6-char)
-// Validate: bank_account matches configured bank
+// getBankConfig() → { id, code, accountNo, accountName }
+// URL = https://img.vietqr.io/image/{code}-{accountNo}-print.png
+//        ?amount={totalAmount}&addInfo={paymentCode}&accountName={accountName}
+```
+
+### Config Priority
+
+```
+1. bank_accounts table (active record)  ← Runtime, admin panel
+2. config.bank (env vars)               ← Deploy-time, fallback
 ```
 
 ---
@@ -91,14 +160,14 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
-| 1 | Data Integrity | Xóa bank đang có orders | Reject — còn pending orders |
-| 2 | Data Integrity | Không có primary bank | Fallback to legacy settings |
-| 3 | Cross-Feature | Switch primary giữa orders | Đơn cũ dùng bank cũ, đơn mới dùng bank mới |
-| 4 | Security | STK hiển thị | Chỉ admin — user thấy qua QR image |
-| 5 | Data Integrity | Trùng STK | Cho phép (backup bank) |
-| 6 | Cross-Feature | SePay chỉ 1 bank | Primary bank phải match SePay config |
-| 7 | Data Integrity | Bank code invalid | Validation trước khi save |
-| 8 | Concurrency | Set primary concurrent | SQLite single-writer |
+| 1 | Data Integrity | TK đầu tiên được thêm | Auto-activate (is_active = 1) |
+| 2 | Data Integrity | Xóa TK active | Auto-promote TK còn lại |
+| 3 | Data Integrity | Xóa TK active, không còn TK nào | Fallback to env config |
+| 4 | Data Integrity | Activate TK → deact tất cả TK khác | Chỉ 1 active tại mọi thời điểm |
+| 5 | Cross-Feature | Thay đổi active bank | Đơn mới dùng bank mới, đơn cũ giữ nguyên |
+| 6 | Cross-Feature | Không có bank_accounts + env rỗng | VietQR generation fails |
+| 7 | Security | STK hiển thị | Admin-only endpoint |
+| 8 | Data Integrity | Không có endpoint UPDATE/PUT | Xóa → thêm lại nếu muốn sửa |
 
 ---
 
@@ -106,9 +175,10 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 | Concern | Solution |
 |---------|----------|
-| Bank info exposure | Admin-only API |
-| VietQR URL | Generated server-side, not stored |
-| SePay webhook | Secret path authentication |
+| Admin auth | API key required for all bank endpoints |
+| Bank info exposure | Admin-only, không hiện cho customer |
+| VietQR URL | Generated server-side, customer chỉ thấy QR image |
+| SePay matching | Payment code match, không validate bank |
 
 ---
 
@@ -116,8 +186,8 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 | Data | Cache | TTL |
 |------|-------|-----|
-| Bank accounts list | No cache | Rarely changes |
-| Primary bank | In-memory | Until update |
+| Bank accounts list | No cache | Real-time query |
+| Active bank config | `getBankConfig()` per request | — |
 
 ---
 
@@ -125,12 +195,16 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 ### Unit Tests
 
-- CRUD bank accounts: create, update, delete
-- Set primary: only one primary at a time
-- VietQR URL generation: correct format
-- Legacy fallback: no bank_accounts → use settings
+- addBankAccount: first account auto-activates
+- addBankAccount: second account stays inactive
+- setActiveBankAccount: deactivates all, activates target
+- deleteBankAccount: active deleted → auto-promote first remaining
+- deleteBankAccount: inactive deleted → no promotion
+- getBankConfig: active bank exists → return bank info
+- getBankConfig: no bank accounts → fallback to env config
 
 ### Integration Tests
 
-- Full flow: add bank → set primary → create order → QR shows correct bank
-- Switch primary: old order has old bank, new order has new bank
+- Full flow: add bank → activate → create order → VietQR uses correct bank
+- Switch bank: activate new → new orders use new bank
+- Delete active: promote next → orders continue working
