@@ -550,6 +550,39 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // Mark order as delivered manually (for invite/preorder types)
+    app.post('/api/admin/orders/:code/mark-delivered', async (req, res) => {
+        try {
+            const order = db.getOrderByCode(req.params.code);
+            if (!order) {
+                return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
+            }
+            if (order.status !== 'paid') {
+                return res.status(400).json({ error: true, message: `Order status is ${order.status}, expected paid`, code: 'INVALID_STATUS' });
+            }
+            db.updateOrderStatus(req.params.code, 'delivered');
+
+            // Notify customer via Telegram
+            if (bot) {
+                try {
+                    let msg = `✅ **Đơn hàng ${order.order_code} đã được xử lý!**\n\n`;
+                    msg += `📦 SP: **${order.product_name}** x${order.quantity}\n`;
+                    if (order.product_type === 'invite') {
+                        msg += `📧 Invite đã được gửi đến email của bạn.\n`;
+                        msg += `Vui lòng kiểm tra hộp thư (cả spam).`;
+                    } else {
+                        msg += `Đơn hàng đã hoàn tất. Cảm ơn bạn!`;
+                    }
+                    await bot.sendMessage(order.telegram_user_id, msg, { parse_mode: 'Markdown' });
+                } catch (e) { /* Ignore notification errors */ }
+            }
+
+            res.json({ message: 'Order marked as delivered', orderCode: req.params.code });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     app.post('/api/admin/orders/:code/set-expiry', (req, res) => {
         try {
             const order = db.getOrderByCode(req.params.code);
