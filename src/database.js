@@ -181,6 +181,7 @@ async function initDatabase() {
         `ALTER TABLE discount_codes ADD COLUMN is_hidden INTEGER DEFAULT 0`,
         `ALTER TABLE discount_codes ADD COLUMN allowed_user_id TEXT`,
         `ALTER TABLE products ADD COLUMN is_featured INTEGER DEFAULT 0`,
+        `ALTER TABLE discount_codes ADD COLUMN product_ids TEXT`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -718,6 +719,8 @@ module.exports = {
     getDiscountUsageStats,
     getActiveDiscountCodes,
     recalcDiscountUsage,
+    getDiscountApplicableProducts,
+    getProductNamesByIds,
     // User purchase limit
     getUserProductPurchaseCount,
 };
@@ -823,14 +826,30 @@ function getBankConfig() {
 // ==================== Discount Codes ====================
 
 function createDiscountCode(data) {
+    // Support multi-product: product_ids is JSON array, product_id is legacy single
+    let productId = data.product_id || null;
+    let productIds = null;
+
+    if (data.product_ids && Array.isArray(data.product_ids) && data.product_ids.length > 0) {
+        const ids = data.product_ids.map(Number).filter(n => n > 0);
+        if (ids.length === 1) {
+            productId = ids[0];
+            productIds = null; // Single product, use legacy field
+        } else if (ids.length > 1) {
+            productId = null; // Multi-product, don't use legacy field
+            productIds = JSON.stringify(ids);
+        }
+    }
+
     db.run(
-        `INSERT INTO discount_codes (code, type, value, product_id, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, allowed_user_id, starts_at, expires_at, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO discount_codes (code, type, value, product_id, product_ids, min_order_amount, max_discount_amount, max_uses, max_uses_per_user, max_discount_qty, required_group_id, is_hidden, allowed_user_id, starts_at, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.code.toUpperCase().trim(),
             data.type || 'percent',
             parseInt(data.value),
-            data.product_id || null,
+            productId,
+            productIds,
             parseInt(data.min_order_amount) || 0,
             data.max_discount_amount ? parseInt(data.max_discount_amount) : null,
             parseInt(data.max_uses) || 0,
@@ -916,6 +935,38 @@ function getDiscountCodeByCode(code) {
 }
 
 /**
+ * Get list of applicable product IDs for a discount code
+ * Returns: array of product IDs, or empty array for "all products"
+ */
+function getDiscountApplicableProducts(discount) {
+    // Multi-product: product_ids is JSON array
+    if (discount.product_ids) {
+        try {
+            const ids = JSON.parse(discount.product_ids);
+            if (Array.isArray(ids) && ids.length > 0) return ids.map(Number);
+        } catch { }
+    }
+    // Legacy: single product_id
+    if (discount.product_id) return [discount.product_id];
+    // All products
+    return [];
+}
+
+/**
+ * Get product names for a list of product IDs
+ */
+function getProductNamesByIds(ids) {
+    if (!ids || ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const stmt = db.prepare(`SELECT id, name FROM products WHERE id IN (${placeholders})`);
+    stmt.bind(ids);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+/**
  * Validate a discount code for a specific user and order.
  * Returns { valid: true, discount } or { valid: false, reason: "..." }
  */
@@ -961,10 +1012,18 @@ function validateDiscountCode(code, userId, orderAmount, productId, quantity, un
         return { valid: false, reason: 'Mã này chỉ dành cho một người dùng cụ thể.' };
     }
 
-    // Check product-specific discount
-    if (discount.product_id && discount.product_id !== productId) {
-        const productName = discount.product_name || 'sản phẩm khác';
-        return { valid: false, reason: `Mã này chỉ áp dụng cho ${productName}.` };
+    // Check product-specific discount (supports both product_id and product_ids)
+    const applicableProductIds = getDiscountApplicableProducts(discount);
+    if (applicableProductIds.length > 0 && !applicableProductIds.includes(productId)) {
+        // Get product names for error message
+        const names = applicableProductIds.map(pid => {
+            const pStmt = db.prepare('SELECT name FROM products WHERE id = ?');
+            pStmt.bind([pid]);
+            const name = pStmt.step() ? pStmt.getAsObject().name : `SP #${pid}`;
+            pStmt.free();
+            return name;
+        });
+        return { valid: false, reason: `Mã này chỉ áp dụng cho: ${names.join(', ')}.` };
     }
 
     // Check minimum order amount
