@@ -130,6 +130,65 @@ function setupAdminAPI(app, bot) {
 
     // ==================== Credentials ====================
 
+    // Search credentials by content (keyword in data) — MUST be before :productId route
+    app.get('/api/admin/credentials/search', (req, res) => {
+        try {
+            const q = (req.query.q || '').trim();
+            if (!q) {
+                return res.status(400).json({ error: true, message: 'Query parameter q is required', code: 'VALIDATION_ERROR' });
+            }
+
+            const d = db.getDb();
+            // Search in credential data (JSON string) using LIKE
+            const stmt = d.prepare(`
+                SELECT c.id AS cred_id, c.data, c.is_sold, c.order_id, c.product_id,
+                       o.order_code, o.status AS order_status, o.total_amount,
+                       o.telegram_username, o.customer_email, o.delivered_at, o.quantity,
+                       p.name AS product_name, p.credential_fields
+                FROM credentials c
+                LEFT JOIN orders o ON c.order_id = o.id
+                LEFT JOIN products p ON c.product_id = p.id
+                WHERE c.data LIKE ?
+                ORDER BY c.created_at DESC
+                LIMIT 20
+            `);
+            stmt.bind([`%${q}%`]);
+            const results = [];
+            while (stmt.step()) results.push(stmt.getAsObject());
+            stmt.free();
+
+            if (results.length === 0) {
+                return res.json({ results: [], message: 'Không tìm thấy credential nào' });
+            }
+
+            // Parse and format results
+            const formatted = results.map(r => {
+                let credData = {};
+                try { credData = JSON.parse(r.data || '{}'); } catch { credData = { value: r.data }; }
+                let credFields = [];
+                try { credFields = JSON.parse(r.credential_fields || '[]'); } catch { }
+
+                return {
+                    credential: { id: r.cred_id, data: credData, is_sold: r.is_sold },
+                    order: r.order_id ? {
+                        order_code: r.order_code,
+                        status: r.order_status,
+                        total_amount: r.total_amount,
+                        telegram_username: r.telegram_username,
+                        customer_email: r.customer_email,
+                        delivered_at: r.delivered_at,
+                        quantity: r.quantity,
+                    } : null,
+                    product: { name: r.product_name, credential_fields: credFields },
+                };
+            });
+
+            res.json({ results: formatted });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     app.get('/api/admin/credentials/:productId', (req, res) => {
         try {
             const d = db.getDb();
@@ -152,6 +211,130 @@ function setupAdminAPI(app, bot) {
             }
             db.addCredential(parseInt(productId), data);
             res.json({ message: 'Credential added' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Check for duplicate credentials before import
+    app.post('/api/admin/credentials/check-duplicates', (req, res) => {
+        try {
+            const { credentials } = req.body;
+            if (!credentials || !Array.isArray(credentials) || credentials.length === 0) {
+                return res.status(400).json({ error: true, message: 'credentials array required', code: 'VALIDATION_ERROR' });
+            }
+
+            const d = db.getDb();
+            const duplicates = [];
+
+            for (let i = 0; i < credentials.length; i++) {
+                const cred = credentials[i];
+                // Get all non-empty values from the credential to search for
+                const values = Object.values(cred).filter(v => v && String(v).trim());
+                if (values.length === 0) continue;
+
+                // Search by each value — if ALL values match in a single existing credential, it's a duplicate
+                // We search by the full JSON string to find exact data matches
+                const credJson = JSON.stringify(cred);
+                const stmt = d.prepare(`
+                    SELECT c.id AS cred_id, c.data, c.is_sold, c.order_id, c.product_id,
+                           p.name AS product_name,
+                           o.order_code, o.status AS order_status, o.telegram_username, o.customer_email
+                    FROM credentials c
+                    LEFT JOIN products p ON c.product_id = p.id
+                    LEFT JOIN orders o ON c.order_id = o.id
+                    WHERE c.data = ?
+                    LIMIT 1
+                `);
+                stmt.bind([credJson]);
+
+                if (stmt.step()) {
+                    const row = stmt.getAsObject();
+                    let credData = {};
+                    try { credData = JSON.parse(row.data || '{}'); } catch { credData = { value: row.data }; }
+
+                    duplicates.push({
+                        index: i,
+                        inputData: cred,
+                        existing: {
+                            id: row.cred_id,
+                            data: credData,
+                            is_sold: !!row.is_sold,
+                            product_name: row.product_name || 'N/A',
+                            product_id: row.product_id,
+                            order: row.order_id ? {
+                                order_code: row.order_code,
+                                status: row.order_status,
+                                telegram_username: row.telegram_username,
+                                customer_email: row.customer_email,
+                            } : null,
+                        },
+                    });
+                }
+                stmt.free();
+
+                // If exact JSON match didn't find it, try searching by individual values
+                // This catches cases where field order differs
+                if (duplicates.length === 0 || duplicates[duplicates.length - 1].index !== i) {
+                    for (const val of values) {
+                        const strVal = String(val).trim();
+                        if (strVal.length < 3) continue; // Skip very short values
+
+                        const searchStmt = d.prepare(`
+                            SELECT c.id AS cred_id, c.data, c.is_sold, c.order_id, c.product_id,
+                                   p.name AS product_name,
+                                   o.order_code, o.status AS order_status, o.telegram_username, o.customer_email
+                            FROM credentials c
+                            LEFT JOIN products p ON c.product_id = p.id
+                            LEFT JOIN orders o ON c.order_id = o.id
+                            WHERE c.data LIKE ?
+                            LIMIT 5
+                        `);
+                        searchStmt.bind([`%${strVal}%`]);
+
+                        while (searchStmt.step()) {
+                            const row = searchStmt.getAsObject();
+                            let existingData = {};
+                            try { existingData = JSON.parse(row.data || '{}'); } catch { existingData = { value: row.data }; }
+
+                            // Check if all input values appear in the existing credential
+                            const existingJson = JSON.stringify(existingData).toLowerCase();
+                            const allMatch = values.every(v => existingJson.includes(String(v).trim().toLowerCase()));
+
+                            if (allMatch) {
+                                duplicates.push({
+                                    index: i,
+                                    inputData: cred,
+                                    existing: {
+                                        id: row.cred_id,
+                                        data: existingData,
+                                        is_sold: !!row.is_sold,
+                                        product_name: row.product_name || 'N/A',
+                                        product_id: row.product_id,
+                                        order: row.order_id ? {
+                                            order_code: row.order_code,
+                                            status: row.order_status,
+                                            telegram_username: row.telegram_username,
+                                            customer_email: row.customer_email,
+                                        } : null,
+                                    },
+                                });
+                                break; // Found a match, no need to check more for this credential
+                            }
+                        }
+                        searchStmt.free();
+
+                        // If we found a duplicate for this index, stop checking other values
+                        if (duplicates.length > 0 && duplicates[duplicates.length - 1].index === i) break;
+                    }
+                }
+            }
+
+            res.json({
+                total: credentials.length,
+                duplicateCount: duplicates.length,
+                duplicates,
+            });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
@@ -311,65 +494,6 @@ function setupAdminAPI(app, bot) {
                     data: typeof c.data === 'string' ? JSON.parse(c.data || '{}') : (c.data || {}),
                 })),
             });
-        } catch (err) {
-            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
-        }
-    });
-
-    // Search credentials by content (keyword in data)
-    app.get('/api/admin/credentials/search', (req, res) => {
-        try {
-            const q = (req.query.q || '').trim();
-            if (!q) {
-                return res.status(400).json({ error: true, message: 'Query parameter q is required', code: 'VALIDATION_ERROR' });
-            }
-
-            const d = db.getDb();
-            // Search in credential data (JSON string) using LIKE
-            const stmt = d.prepare(`
-                SELECT c.id AS cred_id, c.data, c.is_sold, c.order_id, c.product_id,
-                       o.order_code, o.status AS order_status, o.total_amount,
-                       o.telegram_username, o.customer_email, o.delivered_at, o.quantity,
-                       p.name AS product_name, p.credential_fields
-                FROM credentials c
-                LEFT JOIN orders o ON c.order_id = o.id
-                LEFT JOIN products p ON c.product_id = p.id
-                WHERE c.data LIKE ?
-                ORDER BY c.created_at DESC
-                LIMIT 20
-            `);
-            stmt.bind([`%${q}%`]);
-            const results = [];
-            while (stmt.step()) results.push(stmt.getAsObject());
-            stmt.free();
-
-            if (results.length === 0) {
-                return res.json({ results: [], message: 'Không tìm thấy credential nào' });
-            }
-
-            // Parse and format results
-            const formatted = results.map(r => {
-                let credData = {};
-                try { credData = JSON.parse(r.data || '{}'); } catch { credData = { value: r.data }; }
-                let credFields = [];
-                try { credFields = JSON.parse(r.credential_fields || '[]'); } catch { }
-
-                return {
-                    credential: { id: r.cred_id, data: credData, is_sold: r.is_sold },
-                    order: r.order_id ? {
-                        order_code: r.order_code,
-                        status: r.order_status,
-                        total_amount: r.total_amount,
-                        telegram_username: r.telegram_username,
-                        customer_email: r.customer_email,
-                        delivered_at: r.delivered_at,
-                        quantity: r.quantity,
-                    } : null,
-                    product: { name: r.product_name, credential_fields: credFields },
-                };
-            });
-
-            res.json({ results: formatted });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
