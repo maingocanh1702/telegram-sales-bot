@@ -1729,9 +1729,11 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('dupReportModal').classList.add('active');
 
       try {
+        const forceRefresh = window._linkCheckForce || false;
+        window._linkCheckForce = false;
         const res = await apiFetch('/credentials/check-links', {
           method: 'POST',
-          body: { urls: urlsToCheck },
+          body: { urls: urlsToCheck, forceRefresh },
         });
 
         const statusColors = {
@@ -1781,6 +1783,9 @@ Số Lượng Đang Hiện Có 10"
           const s = statusColors[status] || statusColors.unknown;
           html += `<span style="background:${s.bg};color:${s.text};padding:4px 10px;border-radius:6px;font-weight:500">${s.icon} ${s.label}: ${count}</span>`;
         }
+        if (res.cachedCount > 0) {
+          html += `<span style="background:rgba(168,85,247,0.12);color:#a855f7;padding:4px 10px;border-radius:6px;font-weight:500">💾 Cached: ${res.cachedCount}/${res.results.length}</span>`;
+        }
         html += `</div>`;
 
         // Detail per link
@@ -1796,7 +1801,8 @@ Số Lượng Đang Hiện Có 10"
           html += `<span style="min-width:40px;font-weight:600;color:var(--text-muted)">#${meta.line}</span>`;
           html += `<span style="font-size:16px">${isDup ? '🔁' : s.icon}</span>`;
           html += `<a href="${safeUrl}" target="_blank" rel="noopener" style="flex:1;word-break:break-all;color:var(--primary);text-decoration:underline;cursor:pointer"><code>${shortUrl}</code></a>`;
-          html += `<span style="color:${isDup ? '#ef4444' : s.text};white-space:nowrap;font-weight:500">${isDup ? 'TRÙNG' : r.detail}</span>`;
+          const cacheTag = (!isDup && r.fromCache) ? '<span style="color:#a855f7;font-size:10px;margin-right:4px" title="Kết quả từ cache">💾</span>' : '';
+          html += `<span style="color:${isDup ? '#ef4444' : s.text};white-space:nowrap;font-weight:500">${isDup ? 'TRÙNG' : cacheTag + r.detail}</span>`;
           html += `</div>`;
         }
 
@@ -1805,6 +1811,9 @@ Số Lượng Đang Hiện Có 10"
 
         // Actions — fix: open tabs with delay to avoid popup blocker
         let actionsHtml = `<button class="btn btn-ghost" onclick="closeModal('dupReportModal')">Đóng</button>`;
+        if (res.cachedCount > 0) {
+          actionsHtml += ` <button class="btn btn-ghost" onclick="window._linkCheckForce=true;closeModal('dupReportModal');checkCredLinks()" style="color:#a855f7">⚡ Force re-check</button>`;
+        }
         if (hasCfBlocked) {
           actionsHtml += ` <button class="btn btn-primary" onclick="openAllLinksStaggered()">🔗 Mở tất cả ${urlsToCheck.length} links</button>`;
           window._linkCheckUrls = [...new Set(urlsToCheck)]; // dedupe URLs for opening

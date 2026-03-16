@@ -439,27 +439,87 @@ async function checkViaScraperApi(url) {
 }
 
 /**
+ * ==================== Cache System ====================
+ * Smart TTL based on status:
+ * - redeemed/dead/expired: permanent (won't change)
+ * - live: 15 min (can be redeemed anytime)
+ * - everything else: not cached
+ */
+const linkCache = new Map();
+
+const CACHE_TTL = {
+    redeemed: Infinity,      // Permanent — won't un-redeem
+    dead: 24 * 60 * 60000,   // 24 hours
+    expired: 24 * 60 * 60000,// 24 hours
+    live: 15 * 60000,        // 15 minutes
+};
+
+function getCachedResult(url) {
+    const entry = linkCache.get(url);
+    if (!entry) return null;
+    const ttl = CACHE_TTL[entry.result.status];
+    if (!ttl) return null; // No TTL = don't cache this status
+    if (ttl !== Infinity && Date.now() - entry.timestamp > ttl) {
+        linkCache.delete(url);
+        return null;
+    }
+    return { ...entry.result, fromCache: true, cachedAt: new Date(entry.timestamp).toISOString() };
+}
+
+function setCachedResult(url, result) {
+    const ttl = CACHE_TTL[result.status];
+    if (!ttl) return; // Don't cache errors, unknown, cf_blocked
+    linkCache.set(url, { result, timestamp: Date.now() });
+}
+
+function getCacheStats() {
+    let total = 0, redeemed = 0, live = 0, other = 0;
+    for (const [, entry] of linkCache) {
+        total++;
+        if (entry.result.status === 'redeemed') redeemed++;
+        else if (entry.result.status === 'live') live++;
+        else other++;
+    }
+    return { total, redeemed, live, other };
+}
+
+/**
  * Main check function — routes to appropriate checker based on URL
  */
-async function checkLink(url) {
+async function checkLink(url, forceRefresh = false) {
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+        const cached = getCachedResult(url);
+        if (cached) return cached;
+    }
+
+    let result;
     const claudeCode = extractClaudeCode(url);
     if (claudeCode) {
-        return checkClaudeGift(url, claudeCode);
+        result = await checkClaudeGift(url, claudeCode);
+    } else {
+        result = await checkGenericUrl(url);
     }
-    return checkGenericUrl(url);
+
+    // Cache the result
+    setCachedResult(url, result);
+    return result;
 }
 
 /**
  * Check multiple links with concurrency control
+ * @param {string[]} urls - URLs to check
+ * @param {number} concurrency - Max concurrent checks
+ * @param {boolean} forceRefresh - Bypass cache
  */
-async function checkLinks(urls, concurrency = 5) {
+async function checkLinks(urls, concurrency = 5, forceRefresh = false) {
     const results = [];
     for (let i = 0; i < urls.length; i += concurrency) {
-        const batch = urls.slice(i, i + concurrency).map(checkLink);
+        const batch = urls.slice(i, i + concurrency).map(u => checkLink(u, forceRefresh));
         const batchResults = await Promise.all(batch);
         results.push(...batchResults);
     }
     return results;
 }
 
-module.exports = { checkLink, checkLinks, extractClaudeCode };
+module.exports = { checkLink, checkLinks, extractClaudeCode, getCacheStats };

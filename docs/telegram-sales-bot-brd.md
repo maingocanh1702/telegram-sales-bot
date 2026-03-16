@@ -1,6 +1,6 @@
 # CloudX Shop — Business Requirements Document (BRD)
 
-> **Phiên bản:** v1.0.0 | **Ngày:** 2026-03-16 | **Tác giả:** CloudX Team
+> **Phiên bản:** v2.1.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
 
 ---
 
@@ -17,6 +17,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | 2 | Giảm thời gian xử lý đơn | Credential: <30s từ thanh toán → giao hàng |
 | 3 | Mở rộng kênh phân phối | Hỗ trợ nhiều shop instances qua template Railway |
 | 4 | Quản lý tập trung | Admin panel web cho quản lý toàn diện |
+| 5 | Kiểm soát credential chất lượng | Tự động kiểm tra trạng thái link credentials |
 
 ### 1.3 Đối tượng sử dụng
 
@@ -24,7 +25,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 |---------|--------|---------------|
 | **Khách hàng** | Người mua sản phẩm số | Telegram Bot |
 | **Admin/Chủ shop** | Quản lý sản phẩm, đơn hàng, khách hàng | Admin Panel (Web) + Telegram Bot |
-| **CTV (Collaborator)** | Cộng tác viên bán hàng | Telegram Bot (scope hạn chế) |
+| **CTV (Collaborator)** | Cộng tác viên bán hàng, hưởng hoa hồng | Telegram Bot (scope hạn chế) |
 
 ---
 
@@ -33,39 +34,54 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 ### 2.1 Tính năng chính (In-scope)
 
 #### 🤖 Telegram Bot — Khách hàng
-- Duyệt sản phẩm theo danh mục + sản phẩm nổi bật
+- Duyệt sản phẩm theo danh mục + sản phẩm nổi bật (featured)
 - Chọn sản phẩm → chọn số lượng → nhập email → thanh toán
-- Áp dụng mã giảm giá (public, group-restricted, user-specific)
+- Áp dụng mã giảm giá (public, group-restricted, user-specific, multi-product)
 - Xem đơn hàng, hồ sơ cá nhân
 - Nhận credential/invite tự động sau thanh toán
 - Nhận thông báo hết hạn subscription
+- Giới hạn mua mỗi sản phẩm (max_per_user)
 
 #### 🏦 Thanh toán
 - Tạo QR code VietQR cho mỗi đơn hàng
 - Tự động verify thanh toán qua SePay webhook
 - Hỗ trợ chuyển khoản ngân hàng VN
 - Đơn hàng tự hết hạn sau thời gian cấu hình
+- Multi-bank: nhiều tài khoản, 1 active tại mỗi thời điểm
 
 #### 📦 Quản lý sản phẩm
 - 3 loại sản phẩm: `credential`, `invite`, `preorder`
 - Custom credential fields (tên trường, icon, key)
 - Customer fields (email, password...)
 - Danh mục sản phẩm + sắp xếp thứ tự (drag & drop)
-- Sản phẩm nổi bật (featured)
+- Sản phẩm nổi bật (featured) — hiển thị đầu danh sách
+- Product reordering (kéo thả thay đổi thứ tự hiển thị)
+- Giới hạn mua/user (max_per_user)
+- Preorder stock tracking
 
 #### 🎟 Mã giảm giá
 - Giảm theo % hoặc số tiền cố định
-- Giới hạn: tổng lượt dùng, lượt/người, đơn tối thiểu, giảm tối đa
+- Giới hạn: tổng lượt dùng, lượt/người, đơn tối thiểu, giảm tối đa, số SP giảm/đơn
 - Hạn chế: chỉ cho group Telegram, chỉ cho user cụ thể
+- **Áp dụng cho nhiều sản phẩm** (multi-product) — chọn tất cả, 1 SP, hoặc nhiều SP
 - Ẩn/hiện, ngày bắt đầu/kết thúc
+- UI dạng chip/pill tag để chọn SP
+
+#### 🔗 Credential Link Checker
+- Kiểm tra trạng thái link credential hàng loạt (batch ≤30 URLs)
+- Multi-strategy: Direct API, redirect analysis, content analysis
+- **ScraperAPI integration** cho Cloudflare bypass (tiered: basic → render → render+geo)
+- Tiết kiệm credits với 3-tier approach (1 → 10 → 20 credits/request)
+- Phát hiện: live, redeemed, expired, dead, cf_blocked
 
 #### 🖥 Admin Panel (Web)
 - Dashboard: thống kê doanh thu, đơn hàng, khách hàng
 - CRUD sản phẩm, credentials (đơn lẻ + bulk import)
 - Quản lý đơn hàng: xác nhận, hủy, giao thủ công, gửi lại credential
 - Quản lý khách hàng: lịch sử mua, thống kê
-- Quản lý mã giảm giá
+- Quản lý mã giảm giá (multi-product chip selector)
 - Quản lý tài khoản ngân hàng (multi-bank, 1 active)
+- Credential link checker UI
 - Cài đặt hệ thống
 
 ### 2.2 Ngoài phạm vi (Out-of-scope)
@@ -81,7 +97,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 ### 3.1 Quy trình mua hàng (Customer Flow)
 
 ```
-[Khách] /products → Chọn SP → Chọn SL → Nhập email
+[Khách] /products → Xem featured + categories → Chọn SP → Chọn SL → Nhập email
   → [Hệ thống] Hỏi mã giảm giá
     → [Khách] Nhập mã HOẶC Bỏ qua
   → [Hệ thống] Tạo đơn + QR code → Gửi cho khách
@@ -102,7 +118,9 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | Xác nhận đơn | Xác nhận thủ công khi SePay webhook lỡ |
 | Giao thủ công | Mark-delivered cho invite/preorder |
 | Gửi lại credential | Resend khi khách không nhận được |
-| Quản lý giảm giá | CRUD mã giảm giá với các ràng buộc |
+| Quản lý giảm giá | CRUD mã giảm giá với multi-product cho phép |
+| Check link | Kiểm tra hàng loạt trạng thái credential links |
+| Sắp xếp SP | Drag & drop thứ tự hiển thị sản phẩm |
 
 ### 3.3 Quy tắc nghiệp vụ
 
@@ -116,6 +134,9 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | BR-06 | Discount stacking | Mỗi đơn chỉ áp dụng 1 mã giảm giá |
 | BR-07 | Subscription tracking | Sản phẩm có `subscription_days` → hệ thống nhắc hạn |
 | BR-08 | Bank active rule | Chỉ 1 tài khoản ngân hàng active tại 1 thời điểm |
+| BR-09 | Max per user | Giới hạn số lượng mua mỗi SP/user (0 = không giới hạn) |
+| BR-10 | Multi-product discount | 1 mã giảm giá áp dụng cho nhiều SP (product_ids JSON array) |
+| BR-11 | ScraperAPI tiered | Check link dùng 3 tier tiết kiệm credits: basic(1) → render(10) → geo(20) |
 
 ---
 
@@ -129,6 +150,7 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | NFR-04 | Security | Admin API key authentication, secret webhook path |
 | NFR-05 | Scalability | Single-instance design, horizontal scale via template |
 | NFR-06 | Deployment | 1-click Railway deploy, zero-downtime redeploy |
+| NFR-07 | Credential check | ScraperAPI tiered approach, 5000 credits/month (trial) |
 
 ---
 
@@ -142,12 +164,14 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | SePay | Verify thanh toán | Webhook callback khi có tiền vào |
 | VietQR | Tạo QR code thanh toán | Quicklink URL, không cần API key |
 | Railway | Hosting | Volume cho SQLite persistence |
+| ScraperAPI | Cloudflare bypass (link checker) | Trial: 5000 credits, `render=true` tốn 10x |
 
 ### 5.2 Ràng buộc kỹ thuật
 - **SQLite (sql.js)**: In-memory + file sync, single-writer
 - **Node.js ≥18**: Required for native `fetch`
 - **Telegram Bot limit**: 30 messages/second, 20 messages/minute per chat
 - **SePay webhook**: Không hỗ trợ custom auth header → bảo mật bằng secret path
+- **ScraperAPI trial**: 5,000 credits/tháng, JS render = 10 credits, US geo = +10
 
 ---
 
@@ -160,6 +184,8 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | R-03 | Bot bị block bởi Telegram | Thấp | Webhook health check mỗi 60s |
 | R-04 | SQLite data loss | Trung bình | Railway volume mount + graceful shutdown |
 | R-05 | Duplicate payment processing | Thấp | Order code unique, status check trước khi xử lý |
+| R-06 | ScraperAPI hết credits | Thấp | Tiered approach tiết kiệm credits, fallback manual check |
+| R-07 | Cloudflare block pattern mới | Trung bình | Debug logging + pattern expansion khi phát hiện |
 
 ---
 
@@ -173,3 +199,6 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 | **SePay** | Dịch vụ webhook nhận thông báo giao dịch ngân hàng VN |
 | **VietQR** | Chuẩn QR code thanh toán liên ngân hàng Việt Nam |
 | **CTV** | Cộng tác viên — vai trò phụ hỗ trợ bán hàng |
+| **ScraperAPI** | Dịch vụ proxy render trang web, bypass Cloudflare |
+| **Featured** | Sản phẩm nổi bật, hiển thị ưu tiên trong danh sách |
+| **Multi-product discount** | Mã giảm giá áp dụng cho nhiều SP đã chọn |
