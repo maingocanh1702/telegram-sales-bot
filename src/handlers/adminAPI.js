@@ -557,8 +557,8 @@ function setupAdminAPI(app, bot) {
             if (!order) {
                 return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
             }
-            if (order.status !== 'paid') {
-                return res.status(400).json({ error: true, message: `Order status is ${order.status}, expected paid`, code: 'INVALID_STATUS' });
+            if (order.status !== 'paid' && order.status !== 'delivering') {
+                return res.status(400).json({ error: true, message: `Order status is ${order.status}, expected paid/delivering`, code: 'INVALID_STATUS' });
             }
             db.updateOrderStatus(req.params.code, 'delivered');
 
@@ -653,7 +653,7 @@ function setupAdminAPI(app, bot) {
             if (!order) {
                 return res.status(404).json({ error: true, message: 'Order not found', code: 'NOT_FOUND' });
             }
-            if (order.status !== 'delivered' && order.status !== 'paid') {
+            if (!['delivered', 'paid', 'delivering'].includes(order.status)) {
                 return res.status(400).json({ error: true, message: `Cannot resend for status: ${order.status}`, code: 'INVALID_STATUS' });
             }
             if (!bot) {
@@ -702,6 +702,12 @@ function setupAdminAPI(app, bot) {
             text += `⚠️ Lưu ý: Vui lòng đổi mật khẩu sau khi nhận tài khoản.`;
 
             await bot.sendMessage(order.telegram_user_id, text, { parse_mode: 'Markdown' });
+
+            // Mark as delivered after successful resend
+            db.updateOrderStatus(req.params.code, 'delivered');
+            if (product && product.subscription_days && !order.subscription_expires_at) {
+                db.setSubscriptionExpiry(req.params.code, product.subscription_days);
+            }
 
             res.json({ message: `Resent ${credentials.length} credentials to customer` });
         } catch (err) {

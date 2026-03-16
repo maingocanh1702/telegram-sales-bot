@@ -1884,7 +1884,7 @@ Số Lượng Đang Hiện Có 10"
       if (orders.length === 0) {
         html += `<tr><td colspan="${colCount}"><div class="empty-state"><span class="material-symbols-rounded">receipt_long</span><p>Chưa có đơn hàng</p></div></td></tr>`;
       }
-      const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivered: 'badge-success', cancelled: 'badge-danger', expired: 'badge-muted' };
+      const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivering: 'badge-warning', delivered: 'badge-success', cancelled: 'badge-danger', expired: 'badge-muted' };
       const typeIcons = { credential: '🔑', invite: '📧', preorder: '📦' };
       for (const o of orders) {
         const typeIcon = typeIcons[o.product_type] || '🔑';
@@ -1892,11 +1892,11 @@ Số Lượng Đang Hiện Có 10"
           ? `<br><span style="font-size:11px;color:var(--primary)">${o.customer_email}</span>`
           : '';
         html += `<tr>
-          <td>${(o.status === 'delivered' || o.status === 'paid') ? `<code style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewOrderCredentials('${o.order_code}')" title="Click để xem tài khoản đã giao">${o.order_code}</code>` : `<code>${o.order_code}</code>`}</td><td>${o.product_name}</td>
+          <td>${(['delivered','paid','delivering'].includes(o.status)) ? `<code style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewOrderCredentials('${o.order_code}')" title="Click để xem tài khoản đã giao">${o.order_code}</code>` : `<code>${o.order_code}</code>`}</td><td>${o.product_name}</td>
           <td><span style="font-size:12px">${typeIcon}</span></td><td>${o.quantity}</td>
           <td class="money">${formatMoney(o.total_amount)}</td>
           <td>@${o.telegram_username || o.telegram_user_id}${emailInfo}</td>
-          <td><span class="badge ${statusMap[o.status] || ''}">${o.status}</span></td>
+          <td><span class="badge ${statusMap[o.status] || ''}">${o.status === 'delivering' ? 'ĐANG GỬI' : o.status.toUpperCase()}</span></td>
           <td style="font-size:12px;color:var(--text-muted)">${o.created_at}${(() => {
             if (!o.subscription_expires_at) return '';
             const now = new Date();
@@ -1917,6 +1917,15 @@ Số Lượng Đang Hiện Có 10"
           }
           if (o.status === 'paid') {
             if (o.product_type === 'invite') {
+              html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã gửi invite">📧 Đã invite</button>`;
+            } else if (o.product_type === 'preorder') {
+              html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã giao">📦 Đã giao</button>`;
+            }
+          }
+          if (o.status === 'delivering') {
+            if (o.product_type === 'credential') {
+              html += `<button class="btn btn-sm btn-success" onclick="resendCredentials('${o.order_code}')" title="Gửi lại credential cho khách">🔄 Gửi lại</button> `;
+            } else if (o.product_type === 'invite') {
               html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã gửi invite">📧 Đã invite</button>`;
             } else if (o.product_type === 'preorder') {
               html += `<button class="btn btn-sm btn-success" onclick="markDelivered('${o.order_code}')" title="Đánh dấu đã giao">📦 Đã giao</button>`;
@@ -1989,7 +1998,7 @@ Số Lượng Đang Hiện Có 10"
         document.getElementById('customerStats').innerHTML = statsHtml;
 
         // Orders table
-        const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivered: 'badge-success', cancelled: 'badge-danger' };
+        const statusMap = { pending: 'badge-warning', paid: 'badge-info', delivering: 'badge-warning', delivered: 'badge-success', cancelled: 'badge-danger' };
         let html = '<table><tr><th>Mã đơn</th><th>Sản phẩm</th><th>SL</th><th>Tiền</th><th>Trạng thái</th><th>Thời gian</th></tr>';
         for (const o of orders) {
           html += `<tr>
@@ -2110,7 +2119,7 @@ Số Lượng Đang Hiện Có 10"
 
           // Order info row
           if (order) {
-            const statusMap = { pending: '⏳', paid: '💰', delivered: '✅', cancelled: '❌', expired: '⏰' };
+            const statusMap = { pending: '⏳', paid: '💰', delivering: '📤', delivered: '✅', cancelled: '❌', expired: '⏰' };
             html += `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;align-items:center">`;
             html += `<span>${statusMap[order.status] || ''} <strong>${order.order_code}</strong></span>`;
             html += `<span>📦 ${product.name || 'N/A'}</span>`;

@@ -26,6 +26,7 @@ async function deliverCredentials(bot, order) {
  */
 async function deliverPreorder(bot, order, product) {
     try {
+        db.updateOrderStatus(order.order_code, 'delivering');
         const email = order.customer_email;
         const hours = product.delivery_hours || 24;
 
@@ -78,6 +79,7 @@ async function deliverPreorder(bot, order, product) {
  */
 async function deliverInvite(bot, order, product) {
     try {
+        db.updateOrderStatus(order.order_code, 'delivering');
         const email = order.customer_email;
 
         // Notify admin with confirm button
@@ -127,6 +129,9 @@ async function deliverInvite(bot, order, product) {
  */
 async function deliverCredential(bot, order, product) {
     try {
+        // Set status to 'delivering' BEFORE attempting to send
+        db.updateOrderStatus(order.order_code, 'delivering');
+
         const credentials = db.getAvailableCredentials(order.product_id, order.quantity);
 
         if (credentials.length < order.quantity) {
@@ -139,6 +144,7 @@ async function deliverCredential(bot, order, product) {
                 `⚠️ Đơn hàng #${order.order_code} đã được thanh toán.\n\n` +
                 `Tuy nhiên, sản phẩm tạm thời hết stock. Admin sẽ liên hệ bạn sớm nhất!`
             );
+            // Status stays 'delivering' — admin can see and handle
             return false;
         }
 
@@ -192,6 +198,7 @@ async function deliverCredential(bot, order, product) {
         return true;
     } catch (err) {
         console.error(`Error delivering credentials for order ${order.order_code}:`, err.message);
+        // Status stays 'delivering' — admin can see delivery failed
         return false;
     }
 }
