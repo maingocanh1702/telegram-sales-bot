@@ -196,6 +196,24 @@ async function initDatabase() {
         `ALTER TABLE products ADD COLUMN warranty_days INTEGER`,
         `ALTER TABLE discount_codes ADD COLUMN product_ids TEXT`,
         `ALTER TABLE discount_codes ADD COLUMN is_new_user_only INTEGER DEFAULT 0`,
+        // Phase 1: Products — seller info + cost price
+        `ALTER TABLE products ADD COLUMN cost_price INTEGER DEFAULT 0`,
+        `ALTER TABLE products ADD COLUMN seller_name TEXT`,
+        `ALTER TABLE products ADD COLUMN seller_telegram TEXT`,
+        `ALTER TABLE products ADD COLUMN seller_phone TEXT`,
+        `ALTER TABLE products ADD COLUMN seller_email TEXT`,
+        `ALTER TABLE products ADD COLUMN seller_note TEXT`,
+        // Phase 1: Orders — manual order support
+        `ALTER TABLE orders ADD COLUMN source TEXT DEFAULT 'bot'`,
+        `ALTER TABLE orders ADD COLUMN source_channel TEXT`,
+        `ALTER TABLE orders ADD COLUMN customer_name TEXT`,
+        `ALTER TABLE orders ADD COLUMN customer_phone TEXT`,
+        `ALTER TABLE orders ADD COLUMN customer_contact_id TEXT`,
+        `ALTER TABLE orders ADD COLUMN include_in_analytics INTEGER DEFAULT 1`,
+        `ALTER TABLE orders ADD COLUMN created_by TEXT`,
+        `ALTER TABLE orders ADD COLUMN note TEXT`,
+        `ALTER TABLE orders ADD COLUMN is_deleted INTEGER DEFAULT 0`,
+        `ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'vietqr'`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -389,14 +407,16 @@ function getProductById(id) {
     return result;
 }
 
-function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null, preorderStock = 0, warrantyDays = null) {
+function addProduct(name, price, description = '', note = '', categoryId = null, credentialFields = null, productType = 'credential', inviteSlots = 0, deliveryHours = 24, subscriptionDays = null, preorderStock = 0, warrantyDays = null, costPrice = 0, sellerInfo = {}) {
     const defaultFields = JSON.stringify([
         { key: 'username', label: 'Tài khoản', icon: '👤' },
         { key: 'password', label: 'Mật khẩu', icon: '🔑' },
     ]);
     db.run(
-        'INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, preorder_stock, warranty_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays, preorderStock, warrantyDays]
+        `INSERT INTO products (name, price, description, note, category_id, credential_fields, product_type, invite_slots, delivery_hours, subscription_days, preorder_stock, warranty_days, cost_price, seller_name, seller_telegram, seller_phone, seller_email, seller_note, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [name, price, description, note, categoryId, credentialFields ? JSON.stringify(credentialFields) : defaultFields, productType, inviteSlots, deliveryHours, subscriptionDays, preorderStock, warrantyDays,
+         costPrice || 0, sellerInfo.name || null, sellerInfo.telegram || null, sellerInfo.phone || null, sellerInfo.email || null, sellerInfo.note || null]
     );
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
@@ -605,14 +625,26 @@ function getExpiredOrders() {
     return results;
 }
 
-function getRecentOrders(limit = 20) {
+function getRecentOrders(limit = 20, filters = {}) {
+    let where = 'WHERE COALESCE(o.is_deleted, 0) = 0';
+    const params = [];
+    if (filters.source) {
+        where += ` AND o.source = ?`;
+        params.push(filters.source);
+    }
+    if (filters.source_channel) {
+        where += ` AND o.source_channel = ?`;
+        params.push(filters.source_channel);
+    }
     const stmt = db.prepare(`
-      SELECT o.*, p.product_type 
+      SELECT o.*, p.product_type, o.source, o.source_channel, o.customer_name, o.note
       FROM orders o 
       LEFT JOIN products p ON o.product_id = p.id 
+      ${where}
       ORDER BY o.created_at DESC LIMIT ?
     `);
-    stmt.bind([limit]);
+    params.push(limit);
+    stmt.bind(params);
     const results = [];
     while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
@@ -623,7 +655,7 @@ function getAllProductsStock() {
     const stmt = db.prepare(`
     SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
            p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days, p.customer_fields,
-           p.preorder_stock,
+           p.preorder_stock, p.cost_price, p.seller_name, p.seller_telegram, p.seller_phone, p.seller_email, p.seller_note,
            CASE p.product_type
              WHEN 'invite' THEN MAX(0, COALESCE(p.invite_slots, 0) - (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')))
              WHEN 'preorder' THEN MAX(0, COALESCE(p.preorder_stock, 0) - (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')))
@@ -742,14 +774,15 @@ function getDashboardStats() {
     const todayStr = new Date().toISOString().split('T')[0];
     const stmt = db.prepare(`
       SELECT
-        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') THEN total_amount ELSE 0 END), 0) as totalRevenue,
-        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') AND DATE(paid_at) = ? THEN total_amount ELSE 0 END), 0) as todayRevenue,
+        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') AND COALESCE(include_in_analytics, 1) = 1 THEN total_amount ELSE 0 END), 0) as totalRevenue,
+        COALESCE(SUM(CASE WHEN status IN ('paid','delivered') AND COALESCE(include_in_analytics, 1) = 1 AND DATE(paid_at) = ? THEN total_amount ELSE 0 END), 0) as todayRevenue,
         COUNT(*) as totalOrders,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingOrders,
         SUM(CASE WHEN status IN ('paid','delivered') THEN 1 ELSE 0 END) as paidOrders,
         SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelledOrders,
         SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expiredOrders
       FROM orders
+      WHERE COALESCE(is_deleted, 0) = 0
     `);
     stmt.bind([todayStr]);
     stmt.step();
@@ -776,6 +809,223 @@ function getCustomerOrders(telegramUserId) {
     while (stmt.step()) results.push(stmt.getAsObject());
     stmt.free();
     return results;
+}
+
+// ==================== Manual Orders ====================
+
+const VALID_SOURCE_CHANNELS = ['zalo', 'facebook', 'offline', 'telegram_dm', 'other'];
+const VALID_MANUAL_STATUSES = ['pending', 'paid', 'delivered'];
+const VALID_PAYMENT_METHODS = ['vietqr', 'usdt', 'paypal', 'cash', 'transfer', 'other'];
+
+function createManualOrder(data) {
+    const { sourceChannel, status = 'pending', paymentMethod = 'other', includeInAnalytics = true,
+        note, customer = {}, items = [], discountCode, discountAmount = 0, totalOverride, createdBy } = data;
+
+    // Validate sourceChannel
+    if (!VALID_SOURCE_CHANNELS.includes(sourceChannel)) {
+        throw { code: 'INVALID_SOURCE_CHANNEL', message: 'Kênh bán không hợp lệ' };
+    }
+    if (!VALID_MANUAL_STATUSES.includes(status)) {
+        throw { code: 'INVALID_STATUS', message: 'Trạng thái không hợp lệ' };
+    }
+    if (items.length === 0) {
+        throw { code: 'EMPTY_ITEMS', message: 'Vui lòng thêm ít nhất 1 sản phẩm' };
+    }
+
+    // Validate items
+    let calculatedTotal = 0;
+    const validatedItems = [];
+    for (const item of items) {
+        if (item.type === 'catalog') {
+            const product = getProductById(item.productId);
+            if (!product) {
+                throw { code: 'PRODUCT_NOT_FOUND', message: `Sản phẩm #${item.productId} không tồn tại` };
+            }
+            const qty = item.quantity || 1;
+            // Credential stock check (strict)
+            if (product.product_type === 'credential') {
+                const stockCount = getStockCount(item.productId);
+                if (stockCount < qty) {
+                    throw { code: 'CREDENTIAL_OUT_OF_STOCK', message: `Không đủ ${product.name} trong kho (${stockCount}/${qty})` };
+                }
+            }
+            validatedItems.push({
+                type: 'catalog',
+                productId: product.id,
+                productName: product.name,
+                unitPrice: product.price,
+                quantity: qty,
+                productType: product.product_type,
+            });
+            calculatedTotal += product.price * qty;
+        } else if (item.type === 'freeform') {
+            if (!item.name || !item.name.trim()) {
+                throw { code: 'INVALID_FREEFORM_NAME', message: 'Vui lòng nhập tên sản phẩm' };
+            }
+            if (!item.price || item.price <= 0) {
+                throw { code: 'INVALID_FREEFORM_PRICE', message: 'Giá phải lớn hơn 0' };
+            }
+            const qty = item.quantity || 1;
+            validatedItems.push({
+                type: 'freeform',
+                productId: null,
+                productName: item.name.trim(),
+                unitPrice: item.price,
+                quantity: qty,
+                productType: null,
+            });
+            calculatedTotal += item.price * qty;
+        }
+    }
+
+    const totalAmount = totalOverride != null ? totalOverride : (calculatedTotal - (discountAmount || 0));
+    const orderCode = `MAN${Date.now()}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+    const now = new Date().toISOString();
+
+    // Use first catalog item as the order-level product (Phase 1 compat — single product_id)
+    const firstCatalog = validatedItems.find(i => i.type === 'catalog');
+
+    db.run('BEGIN TRANSACTION');
+    try {
+        db.run(
+            `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount,
+             status, customer_email, payment_code, source, source_channel, customer_name, customer_phone, customer_contact_id,
+             include_in_analytics, created_by, note, discount_code, discount_amount, payment_method, paid_at, delivered_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                orderCode,
+                0, // telegram_user_id — manual orders don't have a TG user
+                customer.contactId || null,
+                firstCatalog ? firstCatalog.productId : null,
+                validatedItems.map(i => i.productName).join(', '),
+                validatedItems.reduce((sum, i) => sum + i.quantity, 0),
+                firstCatalog ? firstCatalog.unitPrice : validatedItems[0].unitPrice,
+                totalAmount,
+                status,
+                customer.email || null,
+                orderCode,
+                sourceChannel,
+                customer.name || null,
+                customer.phone || null,
+                customer.contactId || null,
+                includeInAnalytics ? 1 : 0,
+                createdBy || null,
+                note || null,
+                discountCode || null,
+                discountAmount || 0,
+                paymentMethod || 'other',
+                ['paid', 'delivered'].includes(status) ? now : null,
+                status === 'delivered' ? now : null,
+            ]
+        );
+
+        // Handle credential assignment for delivered catalog items
+        if (['paid', 'delivered'].includes(status)) {
+            for (const item of validatedItems) {
+                if (item.type === 'catalog' && item.productType === 'credential') {
+                    const creds = getAvailableCredentials(item.productId, item.quantity);
+                    if (creds.length >= item.quantity) {
+                        const credIds = creds.slice(0, item.quantity).map(c => c.id);
+                        // Get order ID from last insert
+                        const oid = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+                        markCredentialsSold(credIds, oid);
+                    }
+                }
+            }
+        }
+
+        db.run('COMMIT');
+        saveDatabase();
+
+        return {
+            orderCode,
+            source: 'manual',
+            sourceChannel,
+            status,
+            totalAmount,
+            itemCount: validatedItems.length,
+            items: validatedItems,
+        };
+    } catch (err) {
+        db.run('ROLLBACK');
+        throw err;
+    }
+}
+
+function updateManualOrder(orderCode, updates) {
+    const order = getOrderByCode(orderCode);
+    if (!order) throw { code: 'ORDER_NOT_FOUND', message: 'Đơn hàng không tồn tại' };
+    if (order.source !== 'manual') throw { code: 'NOT_MANUAL_ORDER', message: 'Chỉ sửa được đơn thủ công' };
+
+    const allowed = ['status', 'note', 'payment_method', 'customer_name', 'customer_phone',
+        'customer_email', 'customer_contact_id', 'include_in_analytics'];
+    const fields = [];
+    const values = [];
+
+    for (const [key, value] of Object.entries(updates)) {
+        if (allowed.includes(key)) {
+            fields.push(`${key} = ?`);
+            values.push(value);
+        }
+    }
+
+    // Handle status transitions
+    if (updates.status === 'paid' && order.status === 'pending') {
+        fields.push('paid_at = ?');
+        values.push(new Date().toISOString());
+        // Assign credentials if product is credential type
+        if (order.product_id) {
+            const product = getProductById(order.product_id);
+            if (product && product.product_type === 'credential') {
+                const creds = getAvailableCredentials(order.product_id, order.quantity);
+                if (creds.length >= order.quantity) {
+                    markCredentialsSold(creds.slice(0, order.quantity).map(c => c.id), order.id);
+                }
+            }
+        }
+    }
+    if (updates.status === 'delivered') {
+        fields.push('delivered_at = ?');
+        values.push(new Date().toISOString());
+    }
+    if (updates.status === 'cancelled' && ['pending', 'paid'].includes(order.status)) {
+        // Rollback credentials if they were assigned
+        if (order.product_id && order.status === 'paid') {
+            db.run('UPDATE credentials SET is_sold = 0, order_id = NULL WHERE order_id = ?', [order.id]);
+        }
+    }
+
+    if (fields.length === 0) return order;
+
+    values.push(orderCode);
+    db.run(`UPDATE orders SET ${fields.join(', ')} WHERE order_code = ?`, values);
+    saveDatabase();
+    return getOrderByCode(orderCode);
+}
+
+function deleteManualOrder(orderCode) {
+    const order = getOrderByCode(orderCode);
+    if (!order) throw { code: 'ORDER_NOT_FOUND', message: 'Đơn hàng không tồn tại' };
+    if (order.source !== 'manual') throw { code: 'NOT_MANUAL_ORDER', message: 'Chỉ xóa được đơn thủ công' };
+
+    // Rollback credentials
+    if (order.product_id && ['paid', 'delivered'].includes(order.status)) {
+        db.run('UPDATE credentials SET is_sold = 0, order_id = NULL WHERE order_id = ?', [order.id]);
+    }
+
+    // Soft delete
+    db.run('UPDATE orders SET is_deleted = 1 WHERE order_code = ?', [orderCode]);
+    saveDatabase();
+    return { action: 'deleted', orderCode };
+}
+
+function getOrderById(id) {
+    const stmt = db.prepare('SELECT * FROM orders WHERE id = ?');
+    stmt.bind([id]);
+    let result = null;
+    if (stmt.step()) result = stmt.getAsObject();
+    stmt.free();
+    return result;
 }
 
 module.exports = {
@@ -807,6 +1057,7 @@ module.exports = {
     generateOrderCode,
     createOrder,
     getOrderByCode,
+    getOrderById,
     getPendingOrderByCode,
     getPendingOrders,
     getUserOrders,
@@ -821,6 +1072,10 @@ module.exports = {
     setOrderExpiryDate,
     getAllProductsStock,
     getDashboardStats,
+    // Manual Orders
+    createManualOrder,
+    updateManualOrder,
+    deleteManualOrder,
     // Settings
     getSetting,
     setSetting,

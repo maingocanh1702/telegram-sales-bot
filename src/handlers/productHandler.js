@@ -261,6 +261,11 @@ async function showProductDetail(bot, chatId, messageId, productId, userId = nul
     text += `💰 Giá: **${formatPrice(product.price)}**\n`;
     text += `📊 Còn lại: **${product.stock}** sản phẩm\n`;
 
+    // SLA display for invite/preorder
+    if (['invite', 'preorder'].includes(product.product_type) && product.delivery_hours > 0) {
+        text += `⏱ Giao trong: **${product.delivery_hours}h** sau thanh toán\n`;
+    }
+
     if (product.description) {
         text += `📝 Mô tả: ${product.description}\n`;
     }
