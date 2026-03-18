@@ -139,6 +139,10 @@ async function createOrder(bot, { chatId, messageId, userId, username, productId
         if (customerEmail) {
             text += `📧 Email: **${customerEmail}**\n`;
         }
+        // SLA display for invite/preorder
+        if (['invite', 'preorder'].includes(product.product_type) && product.delivery_hours > 0) {
+            text += `⏱ Giao hàng trong: **${product.delivery_hours}h** sau thanh toán\n`;
+        }
         text += `\n⏰ Hết hạn sau: ${minutesLeft} phút\n\n`;
         text += `📌 **Thông tin thanh toán:**\n`;
         text += `• Ngân hàng: **${bank.name}**\n`;

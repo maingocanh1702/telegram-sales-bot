@@ -77,7 +77,22 @@ function setupAdminAPI(app, bot) {
             const subDays = subscriptionDays ? parseInt(subscriptionDays) : null;
             const preorderStockVal = parseInt(req.body.preorderStock) || 0;
             const warrantyDaysVal = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
-            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays, preorderStockVal, warrantyDaysVal);
+            const costPriceVal = parseInt(req.body.costPrice) || 0;
+            const sellerInfo = {
+                name: req.body.sellerName || null,
+                telegram: req.body.sellerTelegram || null,
+                phone: req.body.sellerPhone || null,
+                email: req.body.sellerEmail || null,
+                note: req.body.sellerNote || null,
+            };
+            // Validate seller email format
+            if (sellerInfo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerInfo.email)) {
+                return res.status(400).json({ error: true, message: 'Email seller không hợp lệ', code: 'INVALID_SELLER_EMAIL' });
+            }
+            if (costPriceVal < 0) {
+                return res.status(400).json({ error: true, message: 'Giá vốn phải >= 0', code: 'INVALID_COST_PRICE' });
+            }
+            const id = db.addProduct(name, parseInt(price), description || '', note || '', categoryId || null, credentialFields || null, productType || 'credential', parseInt(inviteSlots) || 0, parseInt(deliveryHours) || 24, subDays, preorderStockVal, warrantyDaysVal, costPriceVal, sellerInfo);
             // Save customer_fields for invite/preorder
             if (customerFields && (productType === 'invite' || productType === 'preorder')) {
                 db.updateProduct(id, { customer_fields: JSON.stringify(customerFields) });
@@ -114,6 +129,17 @@ function setupAdminAPI(app, bot) {
             if (req.body.maxPerUser !== undefined) updates.max_per_user = parseInt(req.body.maxPerUser) || 0;
             if (req.body.isFeatured !== undefined) updates.is_featured = req.body.isFeatured ? 1 : 0;
             if (req.body.warrantyDays !== undefined) updates.warranty_days = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
+            // Seller info + cost price
+            if (req.body.costPrice !== undefined) updates.cost_price = parseInt(req.body.costPrice) || 0;
+            if (req.body.sellerName !== undefined) updates.seller_name = req.body.sellerName || null;
+            if (req.body.sellerTelegram !== undefined) updates.seller_telegram = req.body.sellerTelegram || null;
+            if (req.body.sellerPhone !== undefined) updates.seller_phone = req.body.sellerPhone || null;
+            if (req.body.sellerEmail !== undefined) updates.seller_email = req.body.sellerEmail || null;
+            if (req.body.sellerNote !== undefined) updates.seller_note = req.body.sellerNote || null;
+            // Validate seller email format
+            if (updates.seller_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.seller_email)) {
+                return res.status(400).json({ error: true, message: 'Email seller không hợp lệ', code: 'INVALID_SELLER_EMAIL' });
+            }
             db.updateProduct(parseInt(req.params.id), updates);
             res.json({ message: 'Product updated' });
         } catch (err) {
@@ -533,7 +559,10 @@ function setupAdminAPI(app, bot) {
 
     app.get('/api/admin/orders', (req, res) => {
         try {
-            res.json(db.getRecentOrders(100));
+            const filters = {};
+            if (req.query.source) filters.source = req.query.source;
+            if (req.query.source_channel) filters.source_channel = req.query.source_channel;
+            res.json(db.getRecentOrders(100, filters));
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
@@ -740,6 +769,50 @@ function setupAdminAPI(app, bot) {
 
             res.json({ message: `Resent ${credentials.length} credentials to customer` });
         } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // ==================== Manual Orders ====================
+
+    app.post('/api/admin/orders/manual', (req, res) => {
+        try {
+            const result = db.createManualOrder(req.body);
+            res.json({ message: 'Đơn thủ công đã tạo', ...result });
+        } catch (err) {
+            if (err.code) {
+                return res.status(400).json({ error: true, message: err.message, code: err.code });
+            }
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.put('/api/admin/orders/:code/manual', (req, res) => {
+        try {
+            const result = db.updateManualOrder(req.params.code, req.body);
+            res.json({ message: 'Đơn thủ công đã cập nhật', order: result });
+        } catch (err) {
+            if (err.code === 'ORDER_NOT_FOUND') {
+                return res.status(404).json({ error: true, message: err.message, code: err.code });
+            }
+            if (err.code) {
+                return res.status(400).json({ error: true, message: err.message, code: err.code });
+            }
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.delete('/api/admin/orders/:code/manual', (req, res) => {
+        try {
+            const result = db.deleteManualOrder(req.params.code);
+            res.json({ message: 'Đơn thủ công đã xóa', ...result });
+        } catch (err) {
+            if (err.code === 'ORDER_NOT_FOUND') {
+                return res.status(404).json({ error: true, message: err.message, code: err.code });
+            }
+            if (err.code) {
+                return res.status(400).json({ error: true, message: err.message, code: err.code });
+            }
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
         }
     });
