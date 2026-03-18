@@ -300,22 +300,44 @@ async function showProductDetail(bot, chatId, messageId, productId, userId = nul
 
 /**
  * Check if a product has active discounts that the user qualifies for
+ * Must align with showAvailableDiscounts() eligibility checks
  */
 async function checkProductDiscountForUser(bot, productId, userId) {
     const codes = db.getActiveDiscountCodes();
-    const applicable = codes.filter(c => !c.product_id || c.product_id === productId);
-    if (applicable.length === 0) return false;
 
-    for (const code of applicable) {
-        if (!code.required_group_id) return true;
-        try {
-            const member = await bot.getChatMember(code.required_group_id, userId);
-            if (['member', 'administrator', 'creator'].includes(member.status)) {
-                return true;
-            }
-        } catch (e) {
-            // User not in group
+    for (const c of codes) {
+        // Check product applicability (supports both product_id and product_ids)
+        let applicableProductIds = [];
+        if (c.product_ids) {
+            try {
+                applicableProductIds = JSON.parse(c.product_ids).map(Number);
+            } catch {}
+        } else if (c.product_id) {
+            applicableProductIds = [c.product_id];
         }
+        // If product-specific, check match
+        if (applicableProductIds.length > 0 && !applicableProductIds.includes(productId)) continue;
+
+        // Check allowed_user_id restriction
+        if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) continue;
+
+        // Check new-user-only restriction
+        if (c.is_new_user_only && !db.isNewUser(userId)) continue;
+
+        // Check group membership if required
+        if (c.required_group_id) {
+            try {
+                const member = await bot.getChatMember(c.required_group_id, userId);
+                if (['member', 'administrator', 'creator'].includes(member.status)) {
+                    return true;
+                }
+            } catch (e) {
+                // User not in group
+            }
+            continue;
+        }
+
+        return true;
     }
     return false;
 }
