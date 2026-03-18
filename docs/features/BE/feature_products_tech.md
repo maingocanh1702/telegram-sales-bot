@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
   category_id INTEGER,
   name TEXT NOT NULL,
   price INTEGER NOT NULL,
+  cost_price INTEGER,                       -- giá vốn/nhập (admin-only, profit tracking)
   description TEXT DEFAULT '',
   note TEXT DEFAULT '',
   product_type TEXT DEFAULT 'credential',    -- credential | invite | preorder
@@ -30,6 +31,11 @@ CREATE TABLE IF NOT EXISTS products (
   max_per_user INTEGER DEFAULT 0,            -- 0 = unlimited
   is_featured INTEGER DEFAULT 0,             -- hiện ở "Nổi bật"
   is_active INTEGER DEFAULT 1,               -- soft delete = 0
+  seller_name TEXT,                          -- tên seller/nguồn hàng
+  seller_telegram TEXT,                      -- @username telegram seller
+  seller_phone TEXT,                         -- SĐT seller
+  seller_email TEXT,                         -- email seller
+  seller_note TEXT,                          -- ghi chú nội bộ về seller
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );
@@ -43,10 +49,11 @@ CREATE TABLE IF NOT EXISTS credentials (
   product_id INTEGER NOT NULL,
   data TEXT NOT NULL DEFAULT '{}',   -- JSON: {"username":"...","password":"..."}
   is_sold INTEGER DEFAULT 0,
-  order_id INTEGER,
+  order_item_id INTEGER,                     -- v2: FK to order_items (was order_id)
+  sold_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (product_id) REFERENCES products(id),
-  FOREIGN KEY (order_id) REFERENCES orders(id)
+  FOREIGN KEY (order_item_id) REFERENCES order_items(id)
 );
 ```
 
@@ -90,6 +97,43 @@ CREATE TABLE IF NOT EXISTS credentials (
 
 **Validation:** `name` + `price` required (400 nếu thiếu)
 
+### Field Specification — `POST /api/admin/products`
+
+| Field | Type | Required? | Default | Khi NULL / Không gửi |
+|-------|------|----------|---------|---------------------|
+| `name` | string | ✅ **Required** | — | 400 `VALIDATION_ERROR` |
+| `price` | integer | ✅ **Required** | — | 400 `VALIDATION_ERROR` |
+| `description` | string | Optional | `''` | Empty string |
+| `note` | string | Optional | `''` | Empty string |
+| `categoryId` | integer | Optional | `null` | Không thuộc danh mục |
+| `productType` | string | Optional | `'credential'` | Default credential |
+| `credentialFields` | JSON string | Optional | Default schema `[{key:'username',...}]` | Dùng schema mặc định |
+| `customerFields` | JSON string | Optional | Default schema `[{key:'email',...}]` | Dùng schema mặc định |
+| `inviteSlots` | integer | Optional | `0` | `0` = unlimited |
+| `preorderStock` | integer | Optional | `0` | `0` = unlimited |
+| `deliveryHours` | integer | Optional | `24` | 24 giờ SLA |
+| `subscriptionDays` | integer | Optional | `null` | Không có subscription |
+| `warrantyDays` | integer | Optional | `null` | Không bảo hành |
+| `maxPerUser` | integer | Optional | `0` | `0` = unlimited |
+| `isFeatured` | boolean | Optional | `false` | Không nổi bật |
+| `costPrice` | integer | Optional | `null` | Giá vốn (VNĐ). NULL = không track |
+| `sellerName` | string | Optional | `null` | Tên seller/nguồn hàng |
+| `sellerTelegram` | string | Optional | `null` | @username Telegram seller |
+| `sellerPhone` | string | Optional | `null` | SĐT seller |
+| `sellerEmail` | string | Optional | `null` | Email seller |
+| `sellerNote` | string | Optional | `null` | Ghi chú về seller |
+
+> [!NOTE]
+> Seller info và cost_price là **admin-only** — KHÔNG hiển thị trên bot, KHÔNG trả về cho user API. Chỉ dùng cho internal tracking và profit reports.
+
+**Minimum request example (chỉ required fields):**
+
+```json
+{
+  "name": "Claude Pro",
+  "price": 220000
+}
+
 #### PUT `/api/admin/products/:id` — Update (partial)
 
 Chỉ update fields có trong request body:
@@ -99,7 +143,8 @@ Chỉ update fields có trong request body:
 name, price, description, note, is_active,
 credentialFields, productType, inviteSlots, deliveryHours,
 subscriptionDays, customerFields, preorderStock, maxPerUser, isFeatured,
-warrantyDays
+warrantyDays, costPrice,
+sellerName, sellerTelegram, sellerPhone, sellerEmail, sellerNote
 ```
 
 #### DELETE `/api/admin/products/:id` — Smart Delete
@@ -138,10 +183,57 @@ for (let i = 0; i < orderedIds.length; i++) {
 | POST | `/api/admin/credentials/bulk` | Bulk add (`{productId, credentials[]}`) |
 | PUT | `/api/admin/credentials/:id` | Edit (unsold only, 400 if sold) |
 | DELETE | `/api/admin/credentials/:id` | Delete (unsold only: `WHERE is_sold = 0`) |
-| GET | `/api/admin/credentials/search?q=` | Search by keyword in data (LIKE) |
+| GET | `/api/admin/credentials/search?q=` | Search by keyword in data (LIKE, LIMIT 20) |
 | POST | `/api/admin/credentials/check-duplicates` | Pre-check duplicates before import |
-| POST | `/api/admin/credentials/check-links` | 3-phase link validity check |
+| POST | `/api/admin/credentials/check-links` | 3-phase link validity check (max 100 URLs) |
 | GET | `/api/admin/credentials/link-cache` | Export all cached link results |
+
+#### GET `/search?q=` — Response Format
+
+```json
+{
+  "results": [{
+    "credential": { "id": 42, "data": {"email":"..."}, "is_sold": 1 },
+    "order": { "order_code": "ABC123", "status": "delivered", "telegram_username": "@buyer1" },
+    "product": { "name": "Claude Pro", "credential_fields": [...] }
+  }]
+}
+```
+
+#### POST `/check-duplicates` — Response Format
+
+```json
+{
+  "total": 10,
+  "duplicateCount": 3,
+  "duplicates": [{
+    "index": 0,
+    "inputData": { "email": "user@test.com" },
+    "existing": {
+      "id": 15, "data": {...}, "is_sold": true,
+      "product_name": "Claude Pro", "product_id": 1,
+      "order": { "order_code": "XYZ", "status": "delivered" }
+    }
+  }]
+}
+```
+
+> 💡 Check duplicates dùng 2 strategies: exact JSON match trước, sau đó fuzzy LIKE match từng value (≥ 3 chars).
+
+#### POST `/check-links` — Response Format
+
+```json
+{
+  "results": [...],
+  "dupCount": 5,
+  "checkedCount": 8,
+  "cachedCount": 3,
+  "cacheStats": { "total": 100, "redeemed": 20, "live": 50, "other": 30 },
+  "creditsSaved": "~100 credits tiết kiệm nhờ check DB"
+}
+```
+
+**Options:** `preCheckOnly=true` (skip ScraperAPI), `excludeUrls[]` (skip URLs), `forceRefresh=true` (ignore cache)
 
 ### Stock Calculation (`getAllProductsStock`)
 
@@ -163,9 +255,14 @@ END as available
 ```javascript
 addProduct(name, price, description, note, categoryId,
            credentialFields, productType, inviteSlots,
-           deliveryHours, subscriptionDays, preorderStock, warrantyDays)
+           deliveryHours, subscriptionDays, preorderStock, warrantyDays,
+           costPrice, sellerName, sellerTelegram, sellerPhone, sellerEmail, sellerNote)
 // Default credential_fields: [{key:'username',...},{key:'password',...}]
 // Returns: id
+// ⚠️ Create endpoint sau đó gọi updateProduct() riêng cho:
+//    - customer_fields (invite/preorder)
+//    - max_per_user
+//    - is_featured
 
 updateProduct(id, updates)
 // Dynamic SET: loops updates object → builds SQL
@@ -206,7 +303,9 @@ Phase 2: ScraperAPI → tiered (direct → basic → premium)
 
 ---
 
-## 4. Edge Cases
+## 4. Edge Cases (Backend)
+
+**User-side (bot mua hàng):**
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
@@ -216,8 +315,21 @@ Phase 2: ScraperAPI → tiered (direct → basic → premium)
 | 4 | Data Integrity | Delete sold credential | Ignored (WHERE is_sold = 0) |
 | 5 | Concurrency | 2 users buy last stock | SQLite single-writer, FIFO delivery |
 | 6 | Cross-Feature | credential_fields customizable | Each product has own field schema |
-| 7 | Data Integrity | Bulk import empty array | 400 validation error |
-| 8 | Cross-Feature | subscription_days set | After delivery → set subscription_expires_at |
+| 7 | Cross-Feature | subscription_days set | After delivery → set subscription_expires_at |
+
+**Admin-side (tạo/sửa sản phẩm + credential):**
+
+| # | Category | Case | Xử lý |
+|---|----------|------|-------|
+| 8 | Validation | `name` rỗng | 400 `VALIDATION_ERROR`: "Vui lòng nhập tên sản phẩm" |
+| 9 | Validation | `price` ≤ 0 hoặc rỗng | 400 `VALIDATION_ERROR`: "Giá phải lớn hơn 0" |
+| 10 | Validation | Bulk import empty array | 400 `VALIDATION_ERROR`: "No valid credentials to import" |
+| 11 | Validation | Add credential thiếu `productId`/`data` | 400 `VALIDATION_ERROR` |
+| 12 | Validation | `credentialFields` JSON invalid | 400 `VALIDATION_ERROR`: "Định dạng JSON không hợp lệ" |
+| 13 | Validation | `maxPerUser` < 0 | 400 `VALIDATION_ERROR`: "Giới hạn mua phải ≥ 0" |
+| 14 | Validation | `costPrice` < 0 | 400 `VALIDATION_ERROR`: "Giá vốn phải ≥ 0" |
+| 15 | Validation | `costPrice` > `price` | Warning toast: "⚠️ Giá vốn cao hơn giá bán" (vẫn cho lưu) |
+| 16 | Validation | `sellerEmail` format invalid | 400 `VALIDATION_ERROR`: "Email seller không hợp lệ" |
 
 ---
 
@@ -233,14 +345,66 @@ Phase 2: ScraperAPI → tiered (direct → basic → premium)
 
 ---
 
-## 6. Testing Plan
+## 6. API Idempotency & Rate Limits
+
+### Idempotency
+
+| Endpoint | Idempotent? | Behavior khi gọi 2 lần |
+|----------|-------------|------------------------|
+| GET `/products` | ✅ | Read-only, same result |
+| POST `/products` | Không | Tạo 2 products (unique ID) |
+| PUT `/products/:id` | ✅ | Lần 2 same data → no change |
+| DELETE `/products/:id` | ✅ | Lần 2 → 404 (đã xóa) hoặc already soft-deleted |
+| POST `/credentials` | Không | Tạo duplicate credential |
+| POST `/credentials/bulk` | Không | Tạo duplicate batch |
+| PUT `/credentials/:id` | ✅ | Same data → no change |
+| DELETE `/credentials/:id` | ✅ | Lần 2 → 404 |
+| POST `/reorder` | ✅ | Same order → same sort_order values |
+
+### Rate Limits
+
+| Endpoint | Rate Limit | Scope | Error Code |
+|----------|-----------|-------|------------|
+| POST `/products` | 30 req/min | per admin | 429 `PRODUCT_CREATE_RATE_LIMIT` |
+| POST `/credentials/bulk` | 5 req/min | per admin | 429 `BULK_IMPORT_RATE_LIMIT` |
+| POST `/check-links` | 3 req/min | per admin | 429 `CHECK_LINKS_RATE_LIMIT` |
+
+---
+
+## 7. Testing Plan
 
 ### Unit Tests
 
-- addProduct: all 11 params, default credential_fields
-- updateProduct: partial update only specified fields
-- deleteProduct: has orders → soft, no orders → hard + cascade
-- credential CRUD: add, bulk, edit unsold, reject edit sold
-- getAllProductsStock: correct available/sold/total per type
-- reorderProducts: sort_order matches array index
-- search: LIKE matching in credential data JSON
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | addProduct all params | 11 fields | Product created with correct values |
+| 2 | addProduct default credential_fields | No credential_fields | Default username/password JSON |
+| 3 | addProduct required only | name + price | Created with defaults |
+| 4 | updateProduct partial | { price: 300000 } | Only price updated |
+| 5 | updateProduct empty body | {} | No changes, 200 OK |
+| 6 | deleteProduct with orders | Product has orders | Soft delete (is_active=0) |
+| 7 | deleteProduct without orders | Product no orders | Hard delete + cascade credentials |
+| 8 | deleteProduct already deleted | is_active=0 | 404 |
+| 9 | addCredential valid | productId + data JSON | Credential created |
+| 10 | addCredential missing productId | No productId | 400 VALIDATION_ERROR |
+| 11 | bulkAddCredentials valid | Array of 10 creds | All 10 created |
+| 12 | bulkAddCredentials empty array | [] | 400 VALIDATION_ERROR |
+| 13 | updateCredential unsold | is_sold=0 | Updated successfully |
+| 14 | updateCredential sold | is_sold=1 | 400 "Cannot edit sold" |
+| 15 | deleteCredential sold | is_sold=1 | Ignored (WHERE is_sold=0) |
+| 16 | getAllProductsStock credential type | 5 total, 3 sold | available=2, sold=3 |
+| 17 | getAllProductsStock invite type | invite_slots=10, 3 orders | available=7 |
+| 18 | getAllProductsStock preorder type | preorder_stock=5 | stock from field |
+| 19 | reorderProducts | [id3, id1, id2] | sort_order: 0, 1, 2 |
+| 20 | getAvailableCredentials FIFO | 5 unsold creds | Returns oldest N |
+| 21 | Product name validation | "" | 400 VALIDATION_ERROR |
+| 22 | Product price validation | -100 | 400 VALIDATION_ERROR |
+
+### Integration Tests
+
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | Full CRUD lifecycle | Create → update → list → delete | All operations succeed |
+| 2 | Credential import → order delivery | Bulk import → order → deliver | Credentials assigned FIFO |
+| 3 | Stock calculation accuracy | Multiple product types | Stock counts correct |
+| 4 | Search credentials | LIKE query in JSON data | Matching results returned |
