@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS orders (
 //    - Send credentials to customer via bot DM
 ```
 
+#### POST `/cancel` — Cancel Order
+
+```javascript
+// 1. Check order exists (404 if not)
+// 2. KHÔNG validate status — cancel MỌI status (đây là design intent)
+// 3. updateOrderStatus('cancelled')
+// ⚠️ Lưu ý: Cancel KHÔNG revert side-effects:
+//    - Credentials vẫn is_sold = 1 (khách vẫn có)
+//    - Discount usage không rollback
+//    - Payment đã nhận không auto refund
+```
+
 #### POST `/mark-delivered` — Manual Fulfill
 
 ```javascript
@@ -111,7 +123,9 @@ CREATE TABLE IF NOT EXISTS orders (
 // 1. Get credentials WHERE order_id = order.id
 // 2. Build formatted message with credential_fields labels
 // 3. bot.sendMessage() to customer
-// 4. Update status → delivered + set subscription expiry
+// 4. Side-effects:
+//    - updateOrderStatus('delivered') — set delivered_at
+//    - setSubscriptionExpiry() nếu chưa có subscription_expires_at
 ```
 
 ---
@@ -128,9 +142,10 @@ createOrder({ telegramUserId, telegramUsername, productId,
 // Generates order_code via generateOrderCode()
 // payment_code = order_code (same)
 
-getRecentOrders(100)
+getRecentOrders(limit = 20)
+// API gọi với limit = 100
 // SELECT o.*, p.product_type FROM orders o LEFT JOIN products p
-// ORDER BY o.created_at DESC LIMIT 100
+// ORDER BY o.created_at DESC LIMIT ?
 
 updateOrderStatus(orderCode, status)
 // Auto-set timestamps: paid → paid_at, delivered → delivered_at
@@ -140,6 +155,12 @@ getExpiredOrders()
 
 setSubscriptionExpiry(orderCode, subscriptionDays)
 // subscription_expires_at = today + days, expiry_reminded = 0
+// Used by: auto-deliver (deliverCredentials) + resend-credentials
+
+setOrderExpiryDate(orderCode, expiresAtStr)
+// subscription_expires_at = expiresAtStr, expiry_reminded = 0
+// Used by: POST /set-expiry endpoint (admin manual set)
+// Khác với setSubscriptionExpiry: nhận date string, không tính từ days
 
 getExpiringSubscriptions(daysAhead)
 // Find orders expiring within X days (for reminder cron)
@@ -162,14 +183,20 @@ getExpiringSubscriptions(daysAhead)
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
-| 1 | Data Integrity | Confirm already paid order | 400 "Already confirmed" |
-| 2 | Data Integrity | Confirm cancelled order | 400 "Order was cancelled" |
-| 3 | Data Integrity | Mark-delivered non-paid order | 400 "Expected paid/delivering" |
+| 1 | Data Integrity | Confirm already paid order | 400 `ALREADY_CONFIRMED` |
+| 2 | Data Integrity | Confirm cancelled order | 400 `CANCELLED` |
+| 3 | Data Integrity | Mark-delivered non-paid order | 400 `INVALID_STATUS` |
 | 4 | Cross-Feature | Credential stock = 0 at deliver | Return "delivery pending (stock issue)" |
-| 5 | Cross-Feature | Resend non-credential product | 400 "Resend only for credential-type" |
-| 6 | Data Integrity | Resend with no credentials | 400 "No credentials found" |
+| 5 | Cross-Feature | Resend non-credential product | 400 `INVALID_TYPE` |
+| 6 | Data Integrity | Resend with no credentials | 400 `NO_CREDENTIALS` |
 | 7 | Cross-Feature | Subscription expiry tracking | set-expiry or auto from subscription_days |
 | 8 | Data Integrity | order_code = payment_code | Same value, unique constraint |
+| 9 | Data Integrity | Cancel mọi status | ✅ Cho phép — không validate status trước cancel |
+| 10 | Data Integrity | Cancel không revert | Credentials vẫn sold, discount usage giữ nguyên |
+| 11 | Cross-Feature | Resend side-effects | Update status → delivered + set subscription_expires_at |
+| 12 | Validation | set-expiry days ≤ 0 | 400 `VALIDATION_ERROR`: "Số ngày phải lớn hơn 0" |
+| 13 | Concurrency | Confirm order đang being delivered | Check status = pending only |
+| 14 | Data Integrity | Order không tìm thấy | 404 `ORDER_NOT_FOUND` |
 
 ---
 
@@ -185,20 +212,64 @@ getExpiringSubscriptions(daysAhead)
 
 ---
 
-## 6. Testing Plan
+## 6. API Idempotency & Rate Limits
+
+### Idempotency
+
+| Endpoint | Idempotent? | Behavior khi gọi 2 lần |
+|----------|-------------|------------------------|
+| GET `/orders` | ✅ | Read-only |
+| POST `/confirm` | ✅ | Lần 2 → 400 `ALREADY_CONFIRMED` |
+| POST `/cancel` | ✅ | Lần 2 → cancel lại (no-op) |
+| POST `/mark-delivered` | ✅ | Lần 2 → 400 `INVALID_STATUS` (đã delivered) |
+| POST `/set-expiry` | ✅ | Lần 2 same days → overwrite (idempotent) |
+| POST `/resend-credentials` | ✅ | Gửi lại message (side-effect: reset delivered_at) |
+
+### Rate Limits
+
+| Endpoint | Rate Limit | Scope | Error Code |
+|----------|-----------|-------|------------|
+| POST `/confirm` | 10 req/min | per admin | 429 `CONFIRM_RATE_LIMIT` |
+| POST `/cancel` | 10 req/min | per admin | 429 `CANCEL_RATE_LIMIT` |
+| POST `/resend-credentials` | 5 req/min | per order | 429 `RESEND_RATE_LIMIT` |
+| POST `/set-expiry` | 10 req/min | per admin | 429 `EXPIRY_RATE_LIMIT` |
+
+---
+
+## 7. Testing Plan
 
 ### Unit Tests
 
-- createOrder: all fields saved, order_code unique
-- confirm: pending → paid → auto-deliver credential
-- confirm: reject already paid/delivered/cancelled
-- cancel: any status → cancelled
-- mark-delivered: only paid/delivering → delivered
-- set-expiry: subscription_expires_at calculated correctly
-- resend: only credential type, builds formatted message
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | createOrder all fields | Full order data | Order created, order_code unique |
+| 2 | confirm pending order | status=pending | Status → paid → auto-deliver |
+| 3 | confirm already paid | status=paid | 400 `ALREADY_CONFIRMED` |
+| 4 | confirm cancelled order | status=cancelled | 400 `CANCELLED` |
+| 5 | confirm delivered order | status=delivered | 400 `ALREADY_CONFIRMED` |
+| 6 | cancel pending | status=pending | Status → cancelled |
+| 7 | cancel paid | status=paid | Status → cancelled (allowed) |
+| 8 | cancel already cancelled | status=cancelled | Status → cancelled (no-op) |
+| 9 | cancel does NOT revert creds | Cancel with sold creds | Credentials stay is_sold=1 |
+| 10 | cancel does NOT revert discount | Cancel with discount usage | Usage count unchanged |
+| 11 | mark-delivered from paid | status=paid | Status → delivered |
+| 12 | mark-delivered from delivering | status=delivering | Status → delivered |
+| 13 | mark-delivered from pending | status=pending | 400 `INVALID_STATUS` |
+| 14 | mark-delivered from expired | status=expired | 400 `INVALID_STATUS` |
+| 15 | set-expiry valid days | { days: 30 } | subscription_expires_at correct |
+| 16 | set-expiry days ≤ 0 | { days: 0 } | 400 `VALIDATION_ERROR` |
+| 17 | set-expiry reset reminder | Any valid days | expiry_reminded = 0 |
+| 18 | resend credential type | Delivered credential order | Credentials sent to user |
+| 19 | resend invite type | Invite order | 400 `INVALID_TYPE` |
+| 20 | resend with no credentials | No creds linked | 400 `NO_CREDENTIALS` |
+| 21 | resend side-effects | Resend on paid order | Status → delivered + set subscription |
+| 22 | getRecentOrders limit | limit=100 | Returns max 100 |
 
 ### Integration Tests
 
-- Full lifecycle: create → pay → deliver → credentials sent
-- Manual fulfill: create → pay → mark-delivered → notified
-- Subscription: deliver → set-expiry → getExpiringSubscriptions finds it
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | Full lifecycle | Create → pay → deliver → credentials sent | All statuses correct |
+| 2 | Manual fulfill | Create → pay → mark-delivered → notified | Status delivered, customer notified |
+| 3 | Subscription tracking | deliver → set-expiry → getExpiringSubscriptions | Found in expiring list |
+| 4 | Cancel + reorder | Cancel order → new order same product | New order works independently |

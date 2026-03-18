@@ -4,6 +4,20 @@
 **Backend:** Node.js + sql.js (SQLite) + ScraperAPI
 **Handler:** `adminAPI.js`, `database.js`
 
+> **Xem thêm:** [feature_rbac_tech.md](feature_rbac_tech.md) — Platform RBAC + feature flag per shop
+
+### Platform-level Access Control
+
+Link Checker có thể được **bật/tắt toàn cục** hoặc **per-shop** bởi Super Admin thông qua `shop_feature_flags` và `platform_settings`. Xem chi tiết tại [feature_rbac_tech.md](feature_rbac_tech.md#feature-flag-check).
+
+```
+Access resolution:
+1. platform_settings['link_checker_global_enabled'] = '0' → TẮT tất cả shops
+2. shop_feature_flags(shopId, 'link_checker').enabled = false → TẮT shop cụ thể
+3. User permission: Owner = allowed, Co-Admin = check 'link_checker_use', CTV = denied
+4. Quota: shop override config ?? platform defaults
+```
+
 ---
 
 ## 1. Database Schema
@@ -140,18 +154,22 @@ function isCacheValid(entry) {
 
 ---
 
-## 4. Edge Cases (Backend)
+## 4. Edge Cases
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
-| 1 | Security | ScraperAPI key missing | `env.SCRAPER_API_KEY` check → fallback fetch only |
-| 2 | Data Integrity | Batch > 100 URLs | Validate + reject |
-| 3 | Concurrency | Same URL checked twice | Cache prevents duplicate API calls |
-| 4 | Cross-Feature | Link trong kho đã giao | `credentials JOIN orders` → show sold info |
-| 5 | Data Integrity | ScraperAPI all tiers fail | Return last analyzed result (not generic error) |
-| 6 | Security | Cloudflare blocks | ScraperAPI render → geo tier handles |
-| 7 | Data Integrity | Cache DB corrupted | Recreate table on init |
-| 8 | Concurrency | SQLite concurrent writes | Single-writer handled natively |
+| 1 | Data Integrity | URL đã check gần đây | Trả cache nếu < TTL |
+| 2 | Data Integrity | ScraperAPI timeout | Return `unknown`, retry queue |
+| 3 | Data Integrity | ScraperAPI credit hết | Return `unknown`, notify admin |
+| 4 | Cross-Feature | Credential deleted sau check | Cache entry stale, re-check on next import |
+| 5 | Security | URL injection (script tags) | Sanitize URL trước khi gọi ScraperAPI |
+| 6 | Data Integrity | Redirect chain > 5 hops | Follow max 5, final status = last hop |
+| 7 | Data Integrity | URL chứa login wall | Try scraper tier 3 (render=true), detect login keywords |
+| 8 | Cross-Feature | Bulk check > 50 URLs | Queue + batch process, progress callback |
+| 9 | Data Integrity | Non-HTTP URL (ftp://) | Return `invalid_url` |
+| 10 | Performance | Concurrent check same URL | Dedup — chỉ fetch 1 lần, share result |
+| 11 | Data Integrity | URL returns 403 | Report `dead` (access denied) |
+| 12 | Data Integrity | URL returns 5xx | Report `unknown` (server error, may be temp) |
 
 ---
 
@@ -159,42 +177,81 @@ function isCacheValid(entry) {
 
 | Concern | Solution |
 |---------|----------|
-| ScraperAPI key exposure | `.env` only, not in client |
-| Admin auth | API key required for both endpoints |
-| URL injection | Regex URL validation before processing |
-| Rate limiting | Sequential per-link processing (no parallel) |
+| Admin auth | API key required |
+| ScraperAPI key | Environment variable, not in code |
+| URL injection | Sanitize, URL parse validation |
+| Rate abuse | Rate limit per admin |
 
 ---
 
-## 6. Caching Strategy
+## 6. API Idempotency & Rate Limits
+
+### Idempotency
+
+| Endpoint | Idempotent? | Behavior khi gọi 2 lần |
+|----------|-------------|------------------------|
+| POST `/check-links` | ✅ | Lần 2 trả cache nếu < TTL, re-check nếu expired |
+| GET `/check-status/:id` | ✅ | Read-only |
+
+### Rate Limits
+
+| Endpoint | Rate Limit | Scope | Error Code |
+|----------|-----------|-------|------------|
+| POST `/check-links` | 3 req/min | per admin | 429 `CHECK_LINKS_RATE_LIMIT` |
+| POST `/check-links` (ScraperAPI calls) | 50 req/day | per shop (ScraperAPI credits) | 429 `SCRAPER_DAILY_LIMIT` |
+
+---
+
+## 7. Caching Strategy
 
 | Data | Cache | TTL |
 |------|-------|-----|
-| Redeemed links | SQLite persistent | ∞ |
-| Dead/expired links | SQLite persistent | 24h |
-| Live links | SQLite persistent | 15min |
-| Unknown links | SQLite persistent | 5min |
-| DB duplicates | No cache (real-time) | — |
+| URL `alive` | SQLite `link_checks` | 7 ngày |
+| URL `dead` | SQLite `link_checks` | 1 ngày |
+| URL `unknown` | SQLite `link_checks` | 4 giờ |
+| ScraperAPI credits remaining | In-memory | 1 giờ |
 
 ---
 
-## 7. Testing Plan
+## 8. Testing Plan
 
 ### Unit Tests
 
-- URL analysis: claude URLs, generic URLs, edge patterns
-- Cache TTL: each status type, boundary conditions
-- DB duplicate detection: sold/unsold credentials
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | checkUrl free tier alive | HTTP 200 | status = alive |
+| 2 | checkUrl free tier dead | HTTP 404 | status = dead |
+| 3 | checkUrl free tier timeout | No response 10s | status = unknown |
+| 4 | checkUrl scraper tier 2 | Requires JS render | Status from rendered page |
+| 5 | checkUrl scraper tier 3 | Country-specific | Uses country proxy |
+| 6 | checkUrl cache hit | URL checked < TTL ago | Returns cache, no fetch |
+| 7 | checkUrl cache expired | URL checked > TTL ago | Re-fetch |
+| 8 | checkUrl invalid URL | "not a url" | status = invalid_url |
+| 9 | checkUrl redirect chain | 3 redirects → 200 | status = alive |
+| 10 | checkUrl redirect loop | Infinite redirect | status = dead (max 5 hops) |
+| 11 | checkUrl 403 | Access denied | status = dead |
+| 12 | checkUrl 5xx | Server error | status = unknown |
+| 13 | Bulk check dedup | Same URL × 5 | Only 1 fetch |
+| 14 | Bulk check mixed | 3 alive + 2 dead | Correct per-URL status |
+| 15 | TTL alive | 7 days | Cache valid within 7d |
+| 16 | TTL dead | 1 day | Cache recheck after 1d |
+| 17 | TTL unknown | 4 hours | Cache recheck after 4h |
+| 18 | ScraperAPI credit check | credits = 0 | Return unknown, not call API |
+| 19 | URL sanitization | Script injection | Sanitized URL passed |
+| 20 | Non-HTTP URL | ftp://example.com | status = invalid_url |
 
 ### Integration Tests
 
-- Full flow: paste URLs → pre-check → confirm → ScraperAPI → results
-- Cache hit: same URL twice → second is instant
-- Export: CSV download contains all expected fields
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | Full check flow | Import creds → check → results | All URLs checked correctly |
+| 2 | Cache lifecycle | Check → cache → re-check after TTL | Fresh results |
+| 3 | ScraperAPI failover | Tier 1 fail → tier 2 | Auto-escalate |
+| 4 | Bulk progress | 20 URLs → poll status | Progress updates correct |
 
 ---
 
-## 8. Acceptance Criteria
+## 9. Acceptance Criteria
 
 - [x] 2-step flow: free pre-check → confirm → ScraperAPI
 - [x] SQLite persistent cache with TTL per status

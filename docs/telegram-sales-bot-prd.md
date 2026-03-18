@@ -1,6 +1,6 @@
 # CloudX Shop — Product Requirements Document (PRD)
 
-> **Phiên bản:** v2.2.0 | **Cập nhật:** 2026-03-16 | **Tác giả:** CloudX Team
+> **Phiên bản:** v2.4.0 | **Cập nhật:** 2026-03-18 | **Tác giả:** CloudX Team
 
 ---
 
@@ -12,9 +12,13 @@
 
 | Persona | Mô tả | Nhu cầu chính |
 | ------- | ----- | -------------- |
-| **Khách hàng** | User Telegram mua sản phẩm số | Mua nhanh, thanh toán dễ, nhận hàng tức thì |
-| **Admin** | Chủ shop, quản lý toàn bộ | Dashboard, CRUD sản phẩm, theo dõi đơn hàng |
+| **Super Admin** | Chủ platform, full control | Config features, quản lý shops + team |
+| **Super Moderator** | Team member cấp cao | Quản lý moderators + vận hành shops |
+| **Moderator** | Team member hỗ trợ | Vận hành shops, quyền configurable |
+| **Shop Owner** | Chủ shop, full control shop mình | Dashboard, CRUD, manage co-admins |
+| **Co-Admin** | Admin phụ trong shop | Quyền do Owner set, hỗ trợ vận hành |
 | **CTV** | Cộng tác viên bán hàng | Tạo đơn, theo dõi hoa hồng |
+| **Khách hàng** | User Telegram mua sản phẩm số | Mua nhanh, thanh toán dễ, nhận hàng tức thì |
 
 ---
 
@@ -232,8 +236,9 @@ Generic URLs:
 | Database | SQLite via sql.js (in-memory + file sync) |
 | Web Server | Express.js |
 | Hosting | Railway (volume mount for DB) |
-| Payment | VietQR URL + SePay webhook |
+| Payment | VietQR URL + SePay webhook + USDT (TRC20) + PayPal |
 | CF Bypass | ScraperAPI (tiered credits) |
+| i18n | Static locale files (vi.js + en.js) |
 
 ### 3.2 File Structure
 
@@ -258,6 +263,13 @@ src/
 │   ├── profileHandler.js
 │   ├── quantityHandler.js
 │   └── webhookHandler.js
+├── locales/
+│   ├── vi.js              # Vietnamese translations (~61 strings)
+│   └── en.js              # English translations (~61 strings)
+├── services/
+│   ├── i18n.js            # Translation function t(key, lang, params)
+│   ├── exchangeRateService.js  # VND/USD rate cache
+│   └── usdtPoller.js      # TronGrid USDT transaction polling
 └── utils/
     ├── linkChecker.js    # Multi-strategy URL checker + cache
     ├── orderExpiry.js    # Order auto-expiry logic
@@ -265,6 +277,57 @@ src/
 public/
 └── admin.html            # Single-page admin panel
 ```
+
+---
+
+### F-11: Platform RBAC — Roles & Permissions
+
+**Mô tả:** Hệ thống phân quyền 4 tầng cho SaaS platform.
+
+| Thuộc tính | Chi tiết |
+| ---------- | -------- |
+| Role hierarchy | Super Admin → Super Moderator → Moderator (platform) |
+| Shop roles | Owner → Co-Admin → CTV (per shop) |
+| Auth | Hybrid: email+password + Google OAuth 2.0 (JWT) |
+| Permissions | Tất cả configurable bởi Super Admin, role = defaults |
+| Feature flags | Global toggle + per-shop override |
+| Shop admin | 1 Owner + n Co-Admins, Owner set granular permissions |
+
+**Spec:** [feature_rbac.md](features/FE/feature_rbac.md) / [feature_rbac_tech.md](features/BE/feature_rbac_tech.md)
+
+### F-12: International Payment (USDT + PayPal)
+
+**Mô tả:** Thanh toán quốc tế qua USDT (TRC20) và PayPal bên cạnh VietQR.
+
+| Thuộc tính | Chi tiết |
+| ---------- | -------- |
+| Payment methods | VietQR (existing) + USDT TRC20 + PayPal |
+| Config | Per-shop: USDT wallet address, PayPal Client ID/Secret |
+| Currency | Giá lưu VND, convert sang USD/USDT khi tạo đơn |
+| Exchange rate | Lock tại thời điểm tạo đơn, cache 5 phút |
+| USDT verify | TronGrid API polling (30s interval) |
+| PayPal verify | PayPal webhook (PAYMENT.CAPTURE.COMPLETED) |
+| Order expiry | USDT/PayPal: 30 phút cố định |
+| Security | PayPal secrets encrypted at rest (AES-256) |
+
+**Spec:** [feature_international_payment.md](features/FE/feature_international_payment.md) / [feature_international_payment_tech.md](features/BE/feature_international_payment_tech.md)
+
+### F-13: Language Selection (i18n)
+
+**Mô tả:** Bot hỏi ngôn ngữ (VI/EN) lần đầu, lưu per user, áp dụng cho mọi messages.
+
+| Thuộc tính | Chi tiết |
+| ---------- | -------- |
+| Languages | Việt (`vi`) + English (`en`) |
+| Prompt | Chỉ 1 lần khi `/start` lần đầu |
+| Change | `/language` command + menu button |
+| Strategy | Hybrid: static locale (UI) + giữ nguyên (admin content) + template (dynamic) |
+| Strings | ~61 strings chia 6 nhóm (menu, product, purchase, payment, order, errors) |
+| Scope | Per user per shop |
+| Fallback | `vi` mặc định |
+| Admin | Dashboard luôn tiếng Việt |
+
+**Spec:** [feature_language_selection.md](features/FE/feature_language_selection.md) / [feature_language_selection_tech.md](features/BE/feature_language_selection_tech.md)
 
 ---
 
@@ -280,3 +343,5 @@ public/
 | v2.1 | Multi-product discounts, credential link checker, ScraperAPI, cache | ✅ Done |
 | v2.2 | Pre-check flow, SQLite cache, DB dup detection, export CSV, cache history, new-user discount | ✅ Done |
 | v2.3 | CTV management, analytics dashboard | 🚧 In progress |
+| v2.4 | Platform RBAC, multi-admin per shop, feature flags per shop | 📋 Planned |
+| v2.5 | International payment (USDT + PayPal), Language selection (i18n) | 📋 Planned |

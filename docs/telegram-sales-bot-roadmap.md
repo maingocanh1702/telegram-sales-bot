@@ -1,6 +1,6 @@
 # CloudX Shop — Roadmap
 
-> **Phiên bản:** v1.1.0 | **Cập nhật:** 2026-03-16
+> **Phiên bản:** v1.4.0 | **Cập nhật:** 2026-03-18
 
 ---
 
@@ -91,7 +91,7 @@
 
 ---
 
-## Phase 4: Scale & CTV (v2.3) 🚧
+## Phase 4: Scale & CTV (v2.3-v2.4) 🚧
 
 > **Thời gian:** 2026-03 → 2026-04
 
@@ -103,22 +103,29 @@
 | Analytics dashboard | 🔲 Planned | Biểu đồ doanh thu, trend |
 | Advanced reporting | 🔲 Planned | Export báo cáo, filter theo thời gian |
 | Bulk operations | 🔲 Planned | Bulk update/delete credentials |
+| **📝 Settings restructure (3-tab hybrid)** | ✅ Docs Done | Bot & VND / Thanh toán QT / Chung. Fee bearer config |
+| **🛒 Shopping cart + multi-product orders** | ✅ Docs Done | Giỏ hàng, `order_items` table, per-item delivery |
+| **International payment (USDT + PayPal)** | 📋 Docs Done | Thanh toán quốc tế + fee bearer (shop/customer) |
+| **Language selection (i18n)** | 📋 Docs Done | EN/VI tự chọn, hybrid translation |
+| **Platform RBAC** | 📋 Docs Done | 4-tier roles: SA → Super Mod → Mod → Shop |
+| **Multi-admin per shop** | 📋 Docs Done | Owner + Co-Admins, granular permissions |
+| **Feature flags per shop** | 📋 Docs Done | Global toggle + per-shop override |
+| **Hybrid auth (JWT + Google OAuth)** | 📋 Docs Done | Email+pass + Google login, no self-register |
 
 ---
 
 ## Phase 5: Growth & Optimization (v3.0) 📋
 
-> **Thời gian:** 2026-Q2
+> **Thời gian:** 2026-Q2 → 2026-Q3
 
-| Feature | Chi tiết |
-| ------- | -------- |
-| Multi-admin support | Nhiều admin cùng quản lý |
-| Notification center | Push notifications, scheduled messages |
-| Customer segmentation | Phân loại khách hàng (VIP, new, inactive) |
-| Referral system | Khách giới thiệu khách → khuyến mãi |
-| Auto-pricing rules | Giá động theo stock, thời gian, demand |
-| Database migration to PostgreSQL | Scale beyond single SQLite file |
-| Multi-language (i18n) | Hỗ trợ tiếng Anh |
+| Feature | Status | Chi tiết |
+| ------- | ------ | -------- |
+| Notification center | 🔲 Planned | Push notifications, scheduled messages, in-app alerts |
+| Customer segmentation | 🔲 Planned | Phân loại khách hàng (VIP, new, inactive), auto-tag |
+| Referral system | 🔲 Planned | Khách giới thiệu khách → discount/credit rewards |
+| Auto-pricing rules | 🔲 Planned | Giá động theo stock level, thời gian, demand |
+| Database migration to PostgreSQL | 🔲 Planned | Scale beyond single SQLite file, concurrent writes |
+| Additional languages | 🔲 Planned | Thêm ngôn ngữ mới (Chinese, Japanese...) trên nền i18n sẵn có |
 
 ---
 
@@ -130,9 +137,9 @@
 | Phase 2 ✅ | Config validation, rebuild | — | /profile, /help |
 | Phase 3 ✅ | Link checker, multi-discount, cache | Chip selector, link UI | Featured redesign |
 | Phase 3.5 ✅ | SQLite cache, pre-check API, export, new-user discount | Pre-check dialog, CSV export, 🆕 badge | Checkout suggest |
-| Phase 4 🚧 | CTV APIs, analytics | CTV tab, charts | CTV commands |
-| Phase 5 📋 | PostgreSQL, multi-admin | Notification center | i18n, referral |
+| Phase 4 🚧 | CTV APIs, analytics, USDT/PayPal + fee bearer, i18n, **RBAC + JWT auth** | CTV tab, charts, **unified 3-tab settings**, payment config, **login page** | CTV commands, EN/VI, **🛒 giỏ hàng**, multi-payment |
+| Phase 5 📋 | PostgreSQL, notification APIs, pricing engine | Notification center, customer CRM | Additional languages, referral |
 
 ---
 
-> **Cập nhật lần cuối:** 2026-03-16 v1.1.0
+> **Cập nhật lần cuối:** 2026-03-18 v1.4.0

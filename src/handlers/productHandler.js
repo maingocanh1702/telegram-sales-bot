@@ -2,6 +2,7 @@ const db = require('../database');
 const config = require('../config');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
+const { t, getLang } = require('../locales');
 
 /**
  * Handle product listing with categories and featured products
@@ -9,13 +10,14 @@ const { CALLBACKS } = require('./callbacks');
 function setupProductHandler(bot) {
     // /products text command
     bot.onText(/\/products/, (msg) => {
-        showProductList(bot, msg.chat.id);
+        showProductList(bot, msg.chat.id, null, msg.from.id);
     });
 
     // Callback handlers
     bot.on('callback_query', (query) => {
         const data = query.data;
         if (!data) return;
+        const userId = query.from.id;
 
         if (data === CALLBACKS.NOOP) {
             bot.answerCallbackQuery(query.id);
@@ -24,7 +26,7 @@ function setupProductHandler(bot) {
 
         if (data === CALLBACKS.MENU_PRODUCTS || data === CALLBACKS.MENU_PRODUCTS_REFRESH) {
             bot.answerCallbackQuery(query.id);
-            showProductList(bot, query.message.chat.id, query.message.message_id);
+            showProductList(bot, query.message.chat.id, query.message.message_id, userId);
             return;
         }
 
@@ -33,7 +35,7 @@ function setupProductHandler(bot) {
         if (catMatch) {
             const categoryId = Number.parseInt(catMatch[1], 10);
             bot.answerCallbackQuery(query.id);
-            showCategoryProducts(bot, query.message.chat.id, query.message.message_id, categoryId, query.from.id);
+            showCategoryProducts(bot, query.message.chat.id, query.message.message_id, categoryId, userId);
             return;
         }
 
@@ -43,7 +45,7 @@ function setupProductHandler(bot) {
             const productId = Number.parseInt(catProductMatch[1], 10);
             const categoryId = Number.parseInt(catProductMatch[2], 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, query.from.id, `cat_${categoryId}`);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, userId, `cat_${categoryId}`);
             return;
         }
 
@@ -52,7 +54,7 @@ function setupProductHandler(bot) {
         if (pagedProductMatch) {
             const productId = Number.parseInt(pagedProductMatch[1], 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, query.from.id, CALLBACKS.MENU_PRODUCTS);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, userId, CALLBACKS.MENU_PRODUCTS);
             return;
         }
 
@@ -61,14 +63,14 @@ function setupProductHandler(bot) {
         if (featuredMatch) {
             const productId = Number.parseInt(featuredMatch[1], 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, query.from.id, CALLBACKS.MENU_PRODUCTS);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, userId, CALLBACKS.MENU_PRODUCTS);
             return;
         }
 
         if (data.startsWith('product_')) {
             const productId = Number.parseInt(data.replace('product_', ''), 10);
             bot.answerCallbackQuery(query.id);
-            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, query.from.id, CALLBACKS.MENU_PRODUCTS);
+            showProductDetail(bot, query.message.chat.id, query.message.message_id, productId, userId, CALLBACKS.MENU_PRODUCTS);
             return;
         }
     });
@@ -77,17 +79,18 @@ function setupProductHandler(bot) {
 /**
  * Show main product list: featured products + category buttons
  */
-function showProductList(bot, chatId, messageId = null) {
+function showProductList(bot, chatId, messageId = null, userId = null) {
+    const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
     const featured = db.getFeaturedProducts();
     const categories = db.getCategories();
     const allProducts = db.getProducts();
 
     if (allProducts.length === 0) {
-        const text = '📭 Hiện tại chưa có sản phẩm nào.\n\nVui lòng quay lại sau!';
+        const text = t('product_list_empty', lang);
         const options = {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }],
+                    [{ text: t('btn_main_menu', lang), callback_data: CALLBACKS.MENU_MAIN }],
                 ],
             },
         };
@@ -100,13 +103,12 @@ function showProductList(bot, chatId, messageId = null) {
         return;
     }
 
-    let text = '🛍 **DANH SÁCH SẢN PHẨM**\n\n';
-
+    let text = t('product_list_title', lang) + '\n\n';
     const keyboard = [];
 
     // 🔥 Featured products section
     if (featured.length > 0) {
-        text += '🔥 **Sản phẩm nổi bật:**\n\n';
+        text += t('product_hot', lang) + '\n\n';
         for (const p of featured) {
             const icon = p.stock > 0 ? '🌟' : '❌';
             keyboard.push([{
@@ -118,10 +120,8 @@ function showProductList(bot, chatId, messageId = null) {
 
     // 📂 Category buttons
     if (categories.length > 0) {
-        text += '📂 **Danh mục sản phẩm:**\n';
-        text += '_Chọn danh mục để xem chi tiết_\n';
+        text += t('product_categories', lang) + '\n';
 
-        // Count products per category
         const catCounts = {};
         for (const p of allProducts) {
             if (p.category_id) {
@@ -129,7 +129,6 @@ function showProductList(bot, chatId, messageId = null) {
             }
         }
 
-        // 2 categories per row
         const catRow = [];
         for (const cat of categories) {
             const count = catCounts[cat.id] || 0;
@@ -146,12 +145,12 @@ function showProductList(bot, chatId, messageId = null) {
         if (catRow.length > 0) keyboard.push([...catRow]);
     }
 
-    // Uncategorized products (excluding featured ones already shown at top)
+    // Uncategorized products
     const featuredIds = new Set(featured.map(p => p.id));
     const uncategorized = allProducts.filter(p => !p.category_id && !featuredIds.has(p.id));
     if (uncategorized.length > 0) {
         if (categories.length > 0) {
-            text += '\n📋 **Sản phẩm khác:**\n';
+            text += '\n' + t('product_other', lang) + '\n';
         }
         for (const p of uncategorized) {
             const icon = p.stock > 0 ? '✅' : '❌';
@@ -162,11 +161,20 @@ function showProductList(bot, chatId, messageId = null) {
         }
     }
 
+    // Cart button with count
+    const cartCount = userId ? db.getCartCount(userId) : 0;
+    if (cartCount > 0) {
+        keyboard.push([{
+            text: t('btn_view_cart', lang, { count: cartCount }),
+            callback_data: CALLBACKS.CART_VIEW,
+        }]);
+    }
+
     keyboard.push([
-        { text: '🔄 Làm mới', callback_data: CALLBACKS.MENU_PRODUCTS_REFRESH },
-        { text: '💬 Hỗ trợ', url: config.supportUrl },
+        { text: '🔄', callback_data: CALLBACKS.MENU_PRODUCTS_REFRESH },
+        { text: t('btn_support', lang), url: config.supportUrl },
     ]);
-    keyboard.push([{ text: '🏠 Menu chính', callback_data: CALLBACKS.MENU_MAIN }]);
+    keyboard.push([{ text: t('btn_main_menu', lang), callback_data: CALLBACKS.MENU_MAIN }]);
 
     const options = {
         parse_mode: 'Markdown',
@@ -184,17 +192,18 @@ function showProductList(bot, chatId, messageId = null) {
  * Show products within a category
  */
 async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) {
+    const lang = getLang(userId, db.getUserLanguage);
     const products = db.getProductsByCategory(categoryId);
     const categories = db.getCategories();
     const category = categories.find(c => c.id === categoryId);
 
     if (!category || products.length === 0) {
-        bot.editMessageText('📭 Danh mục không có sản phẩm.', {
+        bot.editMessageText(t('product_list_empty', lang), {
             chat_id: chatId,
             message_id: messageId,
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '↩️ Quay lại', callback_data: CALLBACKS.MENU_PRODUCTS }],
+                    [{ text: t('btn_back', lang), callback_data: CALLBACKS.MENU_PRODUCTS }],
                 ],
             },
         }).catch(ignoreNotModified);
@@ -208,14 +217,12 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
         const icon = p.stock > 0 ? '✅' : '❌';
         text += `${icon} **${p.name}** — ${formatPrice(p.price)}`;
         if (p.stock > 0) {
-            text += ` _(còn ${p.stock})_`;
+            text += ` _(${t('product_stock', lang, { count: p.stock })})_`;
         } else {
-            text += ` _(hết hàng)_`;
+            text += ` _(${t('product_out_of_stock', lang)})_`;
         }
         text += '\n';
     }
-
-    text += '\n👇 Chọn sản phẩm:';
 
     const keyboard = [];
     for (const p of products) {
@@ -226,8 +233,8 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
         }]);
     }
 
-    keyboard.push([{ text: '↩️ Quay lại danh sách', callback_data: CALLBACKS.MENU_PRODUCTS }]);
-    keyboard.push([{ text: '💬 Hỗ trợ', url: config.supportUrl }]);
+    keyboard.push([{ text: t('btn_back_products', lang), callback_data: CALLBACKS.MENU_PRODUCTS }]);
+    keyboard.push([{ text: t('btn_support', lang), url: config.supportUrl }]);
 
     bot.editMessageText(text, {
         chat_id: chatId,
@@ -238,18 +245,19 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
 }
 
 /**
- * Show detailed view of a single product
+ * Show detailed view of a single product — with "Add to Cart" instead of "Buy Now"
  */
 async function showProductDetail(bot, chatId, messageId, productId, userId = null, backCallback = null) {
+    const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
     const product = db.getProductById(productId);
 
     if (!product) {
-        bot.editMessageText('❌ Sản phẩm không tồn tại.', {
+        bot.editMessageText(t('order_product_not_found', lang), {
             chat_id: chatId,
             message_id: messageId,
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '↩️ Quay lại', callback_data: backCallback || CALLBACKS.MENU_PRODUCTS }],
+                    [{ text: t('btn_back', lang), callback_data: backCallback || CALLBACKS.MENU_PRODUCTS }],
                 ],
             },
         }).catch(ignoreNotModified);
@@ -258,42 +266,59 @@ async function showProductDetail(bot, chatId, messageId, productId, userId = nul
 
     let text = `📦 **${product.name.toUpperCase()}**\n`;
     text += `━━━━━━━━━━━━━━━━━━\n\n`;
-    text += `💰 Giá: **${formatPrice(product.price)}**\n`;
-    text += `📊 Còn lại: **${product.stock}** sản phẩm\n`;
+    text += t('product_price', lang, { price: formatPrice(product.price) }) + '\n';
+    text += t('product_stock', lang, { count: product.stock }) + '\n';
 
-    // SLA display for invite/preorder
+    // SLA display
     if (['invite', 'preorder'].includes(product.product_type) && product.delivery_hours > 0) {
-        text += `⏱ Giao trong: **${product.delivery_hours}h** sau thanh toán\n`;
+        text += t('product_sla', lang, { hours: product.delivery_hours }) + '\n';
+    }
+
+    if (product.warranty_days) {
+        text += t('product_warranty', lang, { days: product.warranty_days }) + '\n';
+    }
+
+    if (product.subscription_days) {
+        text += t('product_subscription', lang, { days: product.subscription_days }) + '\n';
     }
 
     if (product.description) {
-        text += `📝 Mô tả: ${product.description}\n`;
+        text += `📝 ${product.description}\n`;
     }
 
     if (product.note) {
-        text += `⚠️ Lưu ý: ${product.note}\n`;
+        text += `⚠️ ${product.note}\n`;
     }
 
-    // Auto-detect discounts for this product
+    // Discount hint
     if (userId) {
         const hasDiscount = await checkProductDiscountForUser(bot, productId, userId);
         if (hasDiscount) {
-            text += `\n🔥 **SP này đang có mã giảm giá!** Gõ /discount để xem\n`;
+            text += `\n🔥 **${lang === 'en' ? 'Discount available!' : 'SP này đang có mã giảm giá!'}** /discount\n`;
         }
     }
-
-    text += `\n👇 Chọn hành động:`;
 
     const keyboard = [];
 
     if (product.stock > 0) {
-        keyboard.push([{ text: '🛒 Mua Ngay', callback_data: `${CALLBACKS.BUY_PREFIX}${product.id}` }]);
+        keyboard.push([
+            { text: t('btn_buy_now', lang), callback_data: `${CALLBACKS.BUY_PREFIX}${product.id}` },
+        ]);
     } else {
-        keyboard.push([{ text: '❌ Hết hàng', callback_data: CALLBACKS.NOOP }]);
+        keyboard.push([{ text: t('product_out_of_stock', lang), callback_data: CALLBACKS.NOOP }]);
     }
 
-    keyboard.push([{ text: '↩️ Quay lại', callback_data: backCallback || CALLBACKS.MENU_PRODUCTS }]);
-    keyboard.push([{ text: '💬 Hỗ trợ', url: config.supportUrl }]);
+    // Show cart button if items in cart
+    const cartCount = userId ? db.getCartCount(userId) : 0;
+    if (cartCount > 0) {
+        keyboard.push([{
+            text: t('btn_view_cart', lang, { count: cartCount }),
+            callback_data: CALLBACKS.CART_VIEW,
+        }]);
+    }
+
+    keyboard.push([{ text: t('btn_back', lang), callback_data: backCallback || CALLBACKS.MENU_PRODUCTS }]);
+    keyboard.push([{ text: t('btn_support', lang), url: config.supportUrl }]);
 
     bot.editMessageText(text, {
         chat_id: chatId,
@@ -305,13 +330,11 @@ async function showProductDetail(bot, chatId, messageId, productId, userId = nul
 
 /**
  * Check if a product has active discounts that the user qualifies for
- * Must align with showAvailableDiscounts() eligibility checks
  */
 async function checkProductDiscountForUser(bot, productId, userId) {
     const codes = db.getActiveDiscountCodes();
 
     for (const c of codes) {
-        // Check product applicability (supports both product_id and product_ids)
         let applicableProductIds = [];
         if (c.product_ids) {
             try {
@@ -320,16 +343,10 @@ async function checkProductDiscountForUser(bot, productId, userId) {
         } else if (c.product_id) {
             applicableProductIds = [c.product_id];
         }
-        // If product-specific, check match
         if (applicableProductIds.length > 0 && !applicableProductIds.includes(productId)) continue;
-
-        // Check allowed_user_id restriction
         if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) continue;
-
-        // Check new-user-only restriction
         if (c.is_new_user_only && !db.isNewUser(userId)) continue;
 
-        // Check group membership if required
         if (c.required_group_id) {
             try {
                 const member = await bot.getChatMember(c.required_group_id, userId);

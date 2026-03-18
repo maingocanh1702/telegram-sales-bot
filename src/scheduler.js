@@ -50,7 +50,16 @@ function setupScheduler(bot) {
     // Then run every hour
     setInterval(checkExpiringSubscriptions, INTERVAL_MS);
 
+    // Cart cleanup: remove items older than 7 days (every 6 hours)
+    const CART_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000;
+    setInterval(() => {
+        db.cleanExpiredCartItems();
+    }, CART_CLEANUP_INTERVAL);
+    // Run first cleanup after 30 seconds
+    setTimeout(() => db.cleanExpiredCartItems(), 30000);
+
     console.log('⏰ Subscription expiry scheduler started (checks every 1 hour)');
+    console.log('🧹 Cart cleanup scheduled (every 6 hours, items > 7 days)');
 }
 
 module.exports = { setupScheduler };

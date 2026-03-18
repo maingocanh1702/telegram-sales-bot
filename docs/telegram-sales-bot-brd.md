@@ -23,9 +23,13 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 
 | Vai trò | Mô tả | Kênh truy cập |
 |---------|--------|---------------|
-| **Khách hàng** | Người mua sản phẩm số | Telegram Bot |
-| **Admin/Chủ shop** | Quản lý sản phẩm, đơn hàng, khách hàng | Admin Panel (Web) + Telegram Bot |
+| **Super Admin** | Chủ platform, full control tất cả shops + features | Admin Panel (Web) |
+| **Super Moderator** | Team member cấp cao, quản lý moderators + shops | Admin Panel (Web) |
+| **Moderator** | Team member, hỗ trợ vận hành platform (quyền configurable) | Admin Panel (Web) |
+| **Shop Owner** | Chủ shop, full control shop mình + quản lý co-admins | Admin Panel (Web) + Telegram Bot |
+| **Co-Admin** | Admin phụ trong shop, quyền do Owner set | Admin Panel (Web) + Telegram Bot |
 | **CTV (Collaborator)** | Cộng tác viên bán hàng, hưởng hoa hồng | Telegram Bot (scope hạn chế) |
+| **Khách hàng** | Người mua sản phẩm số | Telegram Bot |
 
 ---
 
@@ -89,10 +93,9 @@ CloudX Shop là hệ thống bán hàng tự động trên nền tảng Telegram
 - Cài đặt hệ thống
 
 ### 2.2 Ngoài phạm vi (Out-of-scope)
-- Nhiều admin cùng lúc (hiện tại single-admin)
-- Thanh toán quốc tế (chỉ VN bank transfer)
+- Thanh toán quốc tế (chỉ VN bank transfer) — *USDT/PayPal đang planned*
 - Mobile app riêng (sử dụng Telegram + web admin)
-- Multi-language (hiện tại chỉ tiếng Việt)
+- Multi-language (hiện tại chỉ tiếng Việt) — *đang planned*
 
 ---
 

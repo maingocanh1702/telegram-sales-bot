@@ -1,6 +1,7 @@
 const config = require('../config');
 const db = require('../database');
 const { CALLBACKS } = require('./callbacks');
+const { t, getLang, setLang, hasLangPreference } = require('../locales');
 
 /**
  * Format price to Vietnamese format: 15.000 đ
@@ -10,64 +11,226 @@ function formatPrice(price) {
 }
 
 /**
- * Persistent Reply Keyboard layout (bottom of chat)
+ * Get localized reply keyboard
  */
-const REPLY_KEYBOARD = {
-    keyboard: [
-        ['🛒 Sản phẩm', '👤 Tài khoản'],
-        ['📦 Đơn hàng', '💬 Hỗ trợ'],
-    ],
-    resize_keyboard: true,
-    is_persistent: true,
-};
+function getReplyKeyboard(lang) {
+    return {
+        keyboard: [
+            [t('kb_products', lang), t('kb_cart', lang)],
+            [t('kb_discount', lang), t('kb_support', lang)],
+        ],
+        resize_keyboard: true,
+        is_persistent: true,
+    };
+}
 
 /**
- * Handle /start command, main menu, and reply keyboard buttons
+ * Handle /start command, main menu, language selection, and reply keyboard buttons
  */
 function setupMenuHandler(bot) {
     // /start command
     bot.onText(/\/start/, (msg) => {
-        sendMainMenu(bot, msg.chat.id);
+        const userId = msg.from.id;
+        const lang = getLang(userId, db.getUserLanguage);
+
+        // First-time user → show language prompt
+        if (!hasLangPreference(userId)) {
+            const dbLang = db.getUserLanguage(userId);
+            if (dbLang && dbLang !== 'vi') {
+                // User has a saved preference in DB, load it
+                setLang(userId, dbLang);
+                sendMainMenu(bot, msg.chat.id, null, userId);
+            } else if (!dbLang || dbLang === 'vi') {
+                // Check if this is truly a new user (no pref in DB at all)
+                const hasDbPref = db.getUserLanguage(userId);
+                if (hasDbPref === 'vi') {
+                    // Could be default — check if record exists
+                    try {
+                        const result = db.getDb().exec(
+                            'SELECT id FROM user_preferences WHERE telegram_user_id = ?',
+                            [userId]
+                        );
+                        if (result.length > 0 && result[0].values.length > 0) {
+                            setLang(userId, 'vi');
+                            sendMainMenu(bot, msg.chat.id, null, userId);
+                            return;
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+                // New user → show language selection
+                showLanguagePrompt(bot, msg.chat.id);
+            }
+        } else {
+            sendMainMenu(bot, msg.chat.id, null, userId);
+        }
     });
 
-    // Handle Reply Keyboard text buttons — call functions directly (not simulated callback)
+    // /language command
+    bot.onText(/\/language/, (msg) => {
+        showLanguageSelection(bot, msg.chat.id, null, msg.from.id);
+    });
+
+    // /cart command
+    bot.onText(/\/cart/, (msg) => {
+        const { showCart } = require('./cartHandler');
+        showCart(bot, msg.chat.id, null, msg.from.id);
+    });
+
+    // Handle Reply Keyboard text buttons — match both VI and EN
     bot.on('message', (msg) => {
         if (!msg.text) return;
         const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const text = msg.text;
 
-        switch (msg.text) {
-            case '🛒 Sản phẩm': {
-                // Import lazily to avoid circular deps
-                const { showProductList } = require('./productHandler');
-                showProductList(bot, chatId); // no messageId → sends new message
-                break;
-            }
-            case '👤 Tài khoản': {
-                const { showProfile } = require('./profileHandler');
-                showProfile(bot, chatId, msg.from);
-                break;
-            }
-            case '📦 Đơn hàng': {
-                const { showUserOrders } = require('./orderHandler');
-                showUserOrders(bot, chatId, null, msg.from.id); // null messageId → new message
-                break;
-            }
-            case '💬 Hỗ trợ':
-                bot.sendMessage(chatId,
-                    `💬 **Hỗ trợ**\n\nLiên hệ admin: ${config.supportUsername}\n👉 ${config.supportUrl}`,
-                    { parse_mode: 'Markdown' }
-                );
-                break;
+        // Match product button (VI or EN)
+        if (text === '🛒 Sản phẩm' || text === '🛒 Products') {
+            const { showProductList } = require('./productHandler');
+            showProductList(bot, chatId, null, userId);
+            return;
+        }
+
+        // Match account button
+        if (text === '👤 Tài khoản' || text === '👤 Account') {
+            const { showProfile } = require('./profileHandler');
+            showProfile(bot, chatId, msg.from);
+            return;
+        }
+
+        // Match orders button
+        if (text === '📦 Đơn hàng' || text === '📦 Orders') {
+            const { showUserOrders } = require('./orderHandler');
+            showUserOrders(bot, chatId, null, msg.from.id);
+            return;
+        }
+
+        // Match cart button
+        if (text === '🛒 Giỏ hàng' || text === '🛒 Cart') {
+            const { showCart } = require('./cartHandler');
+            showCart(bot, chatId, null, userId);
+            return;
+        }
+
+        // Match discount button
+        if (text === '🎟 Mã giảm giá' || text === '🎟 Discounts') {
+            const { showAvailableDiscounts } = require('./discountHandler');
+            showAvailableDiscounts(bot, chatId, userId);
+            return;
+        }
+
+        // Match support button
+        if (text === '💬 Hỗ trợ' || text === '💬 Support') {
+            const lang = getLang(userId, db.getUserLanguage);
+            bot.sendMessage(chatId,
+                t('support_text', lang, { username: config.supportUsername, url: config.supportUrl }),
+                { parse_mode: 'Markdown' }
+            );
+            return;
         }
     });
 
-    // Callback: return to main menu
+    // Callback handlers
     bot.on('callback_query', (query) => {
-        if (query.data === CALLBACKS.MENU_MAIN) {
+        const data = query.data;
+        const chatId = query.message.chat.id;
+        const userId = query.from.id;
+
+        // Main menu
+        if (data === CALLBACKS.MENU_MAIN) {
             bot.answerCallbackQuery(query.id);
-            sendMainMenu(bot, query.message.chat.id, query.message.message_id);
+            sendMainMenu(bot, chatId, query.message.message_id, userId);
+            return;
+        }
+
+        // Language selection
+        if (data === CALLBACKS.MENU_LANGUAGE) {
+            bot.answerCallbackQuery(query.id);
+            showLanguageSelection(bot, chatId, query.message.message_id, userId);
+            return;
+        }
+
+        // Set language to Vietnamese
+        if (data === CALLBACKS.LANG_VI) {
+            bot.answerCallbackQuery(query.id);
+            db.setUserLanguage(userId, 'vi');
+            setLang(userId, 'vi');
+            // Send confirmation, then main menu
+            bot.editMessageText(t('lang_set', 'vi'), {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+            }).then(() => {
+                sendMainMenu(bot, chatId, null, userId);
+            }).catch(() => {
+                sendMainMenu(bot, chatId, null, userId);
+            });
+            return;
+        }
+
+        // Set language to English
+        if (data === CALLBACKS.LANG_EN) {
+            bot.answerCallbackQuery(query.id);
+            db.setUserLanguage(userId, 'en');
+            setLang(userId, 'en');
+            bot.editMessageText(t('lang_set', 'en'), {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+            }).then(() => {
+                sendMainMenu(bot, chatId, null, userId);
+            }).catch(() => {
+                sendMainMenu(bot, chatId, null, userId);
+            });
+            return;
         }
     });
+}
+
+/**
+ * Show bilingual language prompt for first-time users
+ */
+function showLanguagePrompt(bot, chatId) {
+    bot.sendMessage(chatId, t('lang_prompt', 'vi'), {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: t('btn_lang_vi', 'vi'), callback_data: CALLBACKS.LANG_VI },
+                    { text: t('btn_lang_en', 'vi'), callback_data: CALLBACKS.LANG_EN },
+                ],
+            ],
+        },
+    });
+}
+
+/**
+ * Show language selection (for existing users via /language or menu)
+ */
+function showLanguageSelection(bot, chatId, messageId, userId) {
+    const currentLang = getLang(userId, db.getUserLanguage);
+    const viLabel = currentLang === 'vi' ? '✅ 🇻🇳 Tiếng Việt' : '🇻🇳 Tiếng Việt';
+    const enLabel = currentLang === 'en' ? '✅ 🇬🇧 English' : '🇬🇧 English';
+
+    const text = t('lang_prompt', currentLang);
+    const keyboard = [
+        [
+            { text: viLabel, callback_data: CALLBACKS.LANG_VI },
+            { text: enLabel, callback_data: CALLBACKS.LANG_EN },
+        ],
+        [{ text: t('btn_main_menu', currentLang), callback_data: CALLBACKS.MENU_MAIN }],
+    ];
+
+    if (messageId) {
+        bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard },
+        }).catch(() => {});
+    } else {
+        bot.sendMessage(chatId, text, {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard },
+        });
+    }
 }
 
 /**
@@ -75,27 +238,39 @@ function setupMenuHandler(bot) {
  * 1. Reply keyboard (persistent at bottom)
  * 2. Inline keyboard (in message)
  */
-function sendMainMenu(bot, chatId, editMessageId = null) {
+function sendMainMenu(bot, chatId, editMessageId = null, userId = null) {
+    const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
+
     let text = '🏪 **CLOUDX SHOP**\n\n';
-    text += '👋 Chào mừng bạn đến với CloudX Shop!\n';
+    text += t('welcome', lang, { shopName: 'CloudX Shop' }) + '\n';
 
     // New user discount hint
-    if (!editMessageId && db.isNewUser(chatId)) {
+    if (!editMessageId && userId && db.isNewUser(userId)) {
         const activeCodes = db.getActiveDiscountCodes();
         if (activeCodes.some(c => c.is_new_user_only)) {
-            text += '🎁 _Shop có mã giảm giá dành cho khách mới! Lấy mã tại /discount_\n';
+            text += t('new_user_discount', lang) + '\n';
         }
     }
 
-    text += 'Chọn chức năng bên dưới để bắt đầu:';
+    text += t('menu_select', lang);
+
+    // Cart count badge
+    const cartCount = userId ? db.getCartCount(userId) : 0;
+    const cartLabel = cartCount > 0
+        ? t('btn_view_cart', lang, { count: cartCount })
+        : t('kb_cart', lang);
 
     const inlineKeyboard = [
         [
-            { text: '🛍 Sản phẩm', callback_data: CALLBACKS.MENU_PRODUCTS },
-            { text: '📦 Đơn hàng', callback_data: CALLBACKS.MENU_ORDERS },
+            { text: t('btn_products', lang), callback_data: CALLBACKS.MENU_PRODUCTS },
+            { text: t('btn_orders', lang), callback_data: CALLBACKS.MENU_ORDERS },
         ],
         [
-            { text: '💬 Hỗ trợ', url: config.supportUrl },
+            { text: cartLabel, callback_data: CALLBACKS.CART_VIEW },
+            { text: t('btn_language', lang), callback_data: CALLBACKS.MENU_LANGUAGE },
+        ],
+        [
+            { text: t('btn_support', lang), url: config.supportUrl },
         ],
     ];
 
@@ -114,9 +289,9 @@ function sendMainMenu(bot, chatId, editMessageId = null) {
         // Send with Reply Keyboard to set it persistent
         bot.sendMessage(chatId, text, {
             parse_mode: 'Markdown',
-            reply_markup: REPLY_KEYBOARD,
+            reply_markup: getReplyKeyboard(lang),
         }).then(() => {
-            bot.sendMessage(chatId, '⬇️ Hoặc chọn nhanh:', {
+            bot.sendMessage(chatId, t('menu_quick', lang), {
                 reply_markup: { inline_keyboard: inlineKeyboard },
             });
         });

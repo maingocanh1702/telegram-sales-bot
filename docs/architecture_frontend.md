@@ -84,7 +84,8 @@ Khi hiển thị mã giảm giá qua `/discount`:
 
 - **Single-file SPA:** `public/admin.html` (~110KB)
 - **No framework:** Vanilla HTML/CSS/JS
-- **Auth:** API key nhập lần đầu, lưu `localStorage`
+- **Auth (current):** API key nhập lần đầu, lưu `localStorage`
+- **Auth (planned):** JWT login (email+pass / Google OAuth) — xem [feature_rbac.md](features/FE/feature_rbac.md)
 - **API calls:** `apiFetch()` wrapper tự thêm header + error handling
 
 ### 3.2 Tab Structure

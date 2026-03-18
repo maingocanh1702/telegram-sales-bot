@@ -45,6 +45,76 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // ==================== Categories ====================
+
+    app.get('/api/admin/categories', (req, res) => {
+        try {
+            const categories = db.getAllCategories();
+            // Count products per category
+            const d = db.getDb();
+            const enriched = categories.map(cat => {
+                const stmt = d.prepare('SELECT COUNT(*) as count FROM products WHERE category_id = ? AND CAST(is_active AS INTEGER) = 1');
+                stmt.bind([cat.id]);
+                stmt.step();
+                const productCount = stmt.getAsObject().count || 0;
+                stmt.free();
+                return { ...cat, product_count: productCount };
+            });
+            res.json(enriched);
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.post('/api/admin/categories', (req, res) => {
+        try {
+            const { name, emoji } = req.body;
+            if (!name || !name.trim()) {
+                return res.status(400).json({ error: true, message: 'Tên danh mục không được để trống', code: 'VALIDATION_ERROR' });
+            }
+            const id = db.addCategory(name.trim(), emoji || '📦');
+            res.json({ id, message: 'Danh mục đã tạo' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.put('/api/admin/categories/reorder', (req, res) => {
+        try {
+            const { orderedIds } = req.body;
+            if (!orderedIds || !Array.isArray(orderedIds)) {
+                return res.status(400).json({ error: true, message: 'orderedIds array required', code: 'VALIDATION_ERROR' });
+            }
+            db.reorderCategories(orderedIds);
+            res.json({ message: 'Đã sắp xếp danh mục' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.put('/api/admin/categories/:id', (req, res) => {
+        try {
+            const { name, emoji, is_active } = req.body;
+            const updates = {};
+            if (name !== undefined) updates.name = name.trim();
+            if (emoji !== undefined) updates.emoji = emoji;
+            if (is_active !== undefined) updates.is_active = is_active ? 1 : 0;
+            db.updateCategory(parseInt(req.params.id), updates);
+            res.json({ message: 'Danh mục đã cập nhật' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    app.delete('/api/admin/categories/:id', (req, res) => {
+        try {
+            db.deleteCategory(parseInt(req.params.id));
+            res.json({ message: 'Danh mục đã xóa (sản phẩm được chuyển về Không phân loại)' });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Products ====================
 
     app.get('/api/admin/products', (req, res) => {
@@ -128,6 +198,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.preorderStock !== undefined) updates.preorder_stock = parseInt(req.body.preorderStock) || 0;
             if (req.body.maxPerUser !== undefined) updates.max_per_user = parseInt(req.body.maxPerUser) || 0;
             if (req.body.isFeatured !== undefined) updates.is_featured = req.body.isFeatured ? 1 : 0;
+            if (req.body.categoryId !== undefined) updates.category_id = req.body.categoryId || null;
             if (req.body.warrantyDays !== undefined) updates.warranty_days = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
             // Seller info + cost price
             if (req.body.costPrice !== undefined) updates.cost_price = parseInt(req.body.costPrice) || 0;

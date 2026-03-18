@@ -19,14 +19,15 @@ Luồng mua hàng trên Telegram bot: browse SP → **thêm vào giỏ hàng** �
 ### UC-2.1: Mua hàng (happy path)
 
 1. `/products` → chọn category → chọn SP → xem chi tiết
-2. "Mua ngay" → chọn SL (1, 2, 5, 10, custom) → **Thêm vào giỏ**
-3. Tiếp tục mua hoặc **🛒 Xem giỏ hàng** (giỏ show số items trên button)
-4. Giỏ hàng: xem danh sách items + sử/xóa + tổng tiền → **Thanh toán**
-5. Nhập email (nếu có SP yêu cầu)
-6. Mã giảm giá → nhập hoặc bỏ qua
-7. **Chọn phương thức thanh toán** (VietQR / USDT / PayPal) — bỏ qua nếu shop chỉ có 1 method
-8. Tạo đơn (1 order + N order_items) → hiển thị payment screen
-9. Thanh toán 1 lần cho toàn bộ giỏ → auto-deliver từng item
+2. "🛒 Mua" → chọn SL (1, 2, 5, 10, custom) → **Mua ngay** hoặc **Thêm vào giỏ**
+3. **Mua ngay** → email (nếu cần) → mã giảm giá → chọn PTTT → thanh toán
+4. **Thêm vào giỏ** → tiếp tục mua hoặc **🛒 Xem giỏ hàng** → **Thanh toán**
+5. Giỏ hàng: xem danh sách items + sửa/xóa + tổng tiền → **Thanh toán**
+6. Nhập email (nếu có SP yêu cầu)
+7. Mã giảm giá → nhập hoặc bỏ qua
+8. **Chọn phương thức thanh toán** (VietQR / USDT / PayPal) — bỏ qua nếu shop chỉ có 1 method
+9. Tạo đơn (1 order + N order_items) → hiển thị payment screen
+10. Thanh toán 1 lần cho toàn bộ giỏ → auto-deliver từng item
 
 ### UC-2.2: Đơn hết hạn
 
@@ -178,19 +179,19 @@ Luồng mua hàng trên Telegram bot: browse SP → **thêm vào giỏ hàng** �
 ### Bot — Purchase Flow
 
 ```text
-/products → [Category] → [Product Detail] → [Mua ngay]
-  → [Chọn SL] → [🛒 Thêm vào giỏ]
-     → [Tiếp tục mua] ←──────────────────┐
-     → [🛒 Giỏ hàng (N items)] → [Sửa SL / Xóa] │
-        → [Thanh toán]                          │
-          → [Email input]                        │
-            → [Mã giảm giá]                     │
-              → [Payment Method Selection*]        │
-                → VietQR: [QR Payment] → [Deliver] │
-                → USDT:   [USDT Pay]  → [Deliver] │
-                → PayPal: [PayPal]    → [Deliver] │
-                                                   │
-[/products] → thêm SP khác ──────────────────┘
+/products → [Category] → [Product Detail] → [🛒 Mua]
+  → [Chọn SL (1/2/5/10/custom)]
+     → [🛒 Mua ngay] ────→ [Email input] → [Mã giảm giá]
+     │                        → [Payment Method*] → [QR/USDT/PayPal] → [Deliver]
+     │
+     → [🛒 Thêm vào giỏ] → [Giỏ hàng (N items)]
+        → [Tiếp tục mua] ←──────────────────┐
+        → [Sửa SL / Xóa]                     │
+        → [Thanh toán]                        │
+           → [Email] → [Giảm giá]             │
+             → [Payment Method*] → [Deliver]  │
+                                               │
+/products → thêm SP khác ──────────────────┘
 
 * Bỏ qua nếu shop chỉ có 1 payment method
 ```

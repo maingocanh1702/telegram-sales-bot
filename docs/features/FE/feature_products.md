@@ -248,9 +248,31 @@ erDiagram
     categories {
         int id PK
         text name
+        text emoji
         int sort_order
+        int is_active
     }
 ```
+
+### Admin — Categories Tab
+
+**Layout:** Table with add/edit/delete + reorder
+
+| Element | Mô tả |
+|---------|-------|
+| **Tab header** | "📁 Danh mục" + "＋ Thêm danh mục" (primary) |
+| **Categories table** | Emoji, Name, Product count, Actions (Edit/Toggle/Delete) |
+| **Category modal** | Emoji picker + Name input |
+| **Empty state** | "Chưa có danh mục" + CTA "Thêm danh mục đầu tiên" |
+
+| State | Hiển thị |
+|-------|---------|
+| **Loading** | Skeleton table |
+| **Data** | Categories table + product counts |
+| **Empty** | Empty state + CTA |
+| **Error** | Toast error |
+
+**Product Form — Category dropdown:** Select `<select>` trong Product Form Modal cho phép chọn danh mục. `NULL` = không thuộc danh mục nào. Khi edit, pre-select category hiện tại.
 
 ---
 
@@ -441,6 +463,8 @@ stateDiagram-v2
 | Screen | Loading | Ready/Data | Error | Empty |
 |--------|---------|-----------|-------|-------|
 | Products Tab | ✅ Skeleton | ✅ Drag table + stock | ✅ Toast | ✅ Icon + CTA |
-| Product Form | N/A | ✅ Full form | ✅ Inline errors | N/A |
+| Product Form | N/A | ✅ Full form + category dropdown | ✅ Inline errors | N/A |
+| Categories Tab | ✅ Skeleton | ✅ Table + counts | ✅ Toast | ✅ "Chưa có" + CTA |
+| Category Modal | N/A | ✅ Emoji + Name | ✅ Toast | N/A |
 | Credential List | ✅ Skeleton | ✅ Table + search | ✅ Toast | ✅ "Chưa có" |
 | Bulk Import | N/A | ✅ Textarea + preview | ✅ Toast | N/A |

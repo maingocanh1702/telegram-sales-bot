@@ -11,6 +11,11 @@
 
 Tool chính của webapp — cho phép user paste links credential, kiểm tra trạng thái (live/redeemed/expired/dead), xem kết quả dạng bảng, export CSV.
 
+**Supported URL types:**
+- 🤖 **Claude.ai** — gift/redeem links (multi-strategy: API + redirect + ScraperAPI)
+- 💼 **LinkedIn Premium** — redeem/coupon links (redirect analysis + ScraperAPI render)
+- 🌐 **Generic URLs** — HTTP status + content analysis + ScraperAPI fallback
+
 ---
 
 ## 2. Use Cases
@@ -38,6 +43,9 @@ Tool chính của webapp — cho phép user paste links credential, kiểm tra t
 | Paste trùng URL | Gửi tất cả, cache prevents double API call |
 | Kết quả trả về lâu | Progress bar + "Đang check..." state |
 | API timeout | Toast error đỏ "Lỗi kết nối" |
+| Cloudflare chặn | Status `cf_blocked` → hiện như `unknown` (badge vàng) |
+| LinkedIn URL | Cần đăng nhập → ScraperAPI render, fallback `unknown` |
+| Quota hết | Toast "Đã hết X lượt check hôm nay" (429) |
 
 ---
 
@@ -70,6 +78,7 @@ Tool chính của webapp — cho phép user paste links credential, kiểm tra t
 | `expired` | ⏰ Expired | Orange (#f59e0b) |
 | `dead` | 💀 Dead | Gray (#64748b) |
 | `unknown` | ❓ Unknown | Yellow (#f59e0b) |
+| `cf_blocked` | ❓ Unknown | Yellow (#f59e0b) — hiển thị như unknown trên UI |
 
 ### Stats Chips (above results table)
 
