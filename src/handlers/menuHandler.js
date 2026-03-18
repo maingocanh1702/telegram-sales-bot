@@ -76,8 +76,8 @@ function setupMenuHandler(bot) {
  * 2. Inline keyboard (in message)
  */
 function sendMainMenu(bot, chatId, editMessageId = null) {
-    let text = '🏪 **SHOP TỰ ĐỘNG**\n\n';
-    text += '👋 Chào mừng bạn đến với shop!\n';
+    let text = '🏪 **CLOUDX SHOP**\n\n';
+    text += '👋 Chào mừng bạn đến với CloudX Shop!\n';
 
     // New user discount hint
     if (!editMessageId && db.isNewUser(chatId)) {
