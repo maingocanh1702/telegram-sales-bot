@@ -18,6 +18,7 @@ const { setupProfileHandler } = require('./handlers/profileHandler');
 const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler');
 const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { setupDiscountHandler } = require('./handlers/discountHandler');
+const { setupCartHandler } = require('./handlers/cartHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
 const { startSepayPoller } = require('./utils/sepayPoller');
 const { setupScheduler } = require('./scheduler');
@@ -48,13 +49,14 @@ async function main() {
 
     // 5. Set bot commands (BotFather menu)
     await bot.setMyCommands([
-        { command: 'start', description: 'Hiện menu chính' },
-        { command: 'products', description: 'Xem danh sách sản phẩm' },
-        { command: 'orders', description: 'Đơn hàng đã mua' },
-        { command: 'profile', description: 'Thông tin tài khoản của bạn' },
-        { command: 'discount', description: 'Xem mã giảm giá hiện có' },
-        { command: 'help', description: 'Hỗ trợ khách hàng' },
-        { command: 'huongdan', description: 'Hướng dẫn sử dụng bot' },
+        { command: 'start', description: 'Hiện menu chính / Main menu' },
+        { command: 'products', description: 'Xem sản phẩm / Products' },
+        { command: 'orders', description: 'Đơn hàng / Orders' },
+        { command: 'profile', description: 'Tài khoản / Account' },
+        { command: 'discount', description: 'Mã giảm giá / Discount codes' },
+        { command: 'language', description: '🌐 Chọn ngôn ngữ / Language' },
+        { command: 'help', description: 'Hỗ trợ / Support' },
+        { command: 'huongdan', description: 'Hướng dẫn / Guide' },
     ]).catch((err) => {
         console.error('⚠️ Failed to set bot commands:', err.message);
     });
@@ -143,6 +145,7 @@ async function main() {
     setupOrderHandler(bot);
     setupInviteConfirmHandler(bot);
     setupDiscountHandler(bot);
+    setupCartHandler(bot);
     setupScheduler(bot);
     setupProfileHandler(bot);
     setupHelpHandler(bot);

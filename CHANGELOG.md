@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.3.0 - 2026-03-19
+
+### Changed
+
+- **Purchase flow reworked**: Product Detail → 🛒 Mua → Chọn SL → **Mua ngay** / **Thêm vào giỏ** (trước đây chọn Buy/Cart trước rồi mới chọn SL)
+- **Reply keyboard giảm từ 6 → 4 button**: 🛍 Sản phẩm | 🛒 Giỏ hàng | 🎟 Mã giảm giá | 💬 Hỗ trợ (bỏ Tài khoản, Đơn hàng khỏi reply keyboard — vẫn có trong inline keyboard)
+- **Discount button**: Nút "Mã giảm giá" trên inline keyboard + reply keyboard giờ gọi cùng flow `showAvailableDiscounts` (trước đây reply keyboard gọi khác với command /discount)
+
+### Fixed
+
+- **Cart inline button**: Hiện "🛒 Giỏ hàng" thay vì chỉ emoji 🛒 khi giỏ trống (bị mờ/không text)
+- **Product icon**: Fix `kb_products` locale dùng nhầm emoji 🛒 (cart) thay vì 🛍 (shopping bags)
+- **Cart items TTL**: Xóa cart items cũ hơn 7 ngày (cleanup query trong `getCartItems`)
+
+### Added
+
+- **Admin category management**: CRUD danh mục trên admin dashboard (thêm/sửa/xóa/toggle active)
+- **Product-category link**: Dropdown chọn danh mục trong form sản phẩm, API cập nhật `categoryId`
+
 ## v2.2.0 - 2026-03-16
 
 ### Added

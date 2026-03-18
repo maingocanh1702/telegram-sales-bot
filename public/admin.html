@@ -632,6 +632,9 @@
         <a onclick="showSection('products')">
           <span class="material-symbols-rounded">inventory_2</span> Sản phẩm
         </a>
+        <a onclick="showSection('categories')">
+          <span class="material-symbols-rounded">category</span> Danh mục
+        </a>
         <a onclick="showSection('credentials')">
           <span class="material-symbols-rounded">key</span> Credentials
         </a>
@@ -680,6 +683,41 @@
         </div>
         <div class="card">
           <div id="productsTable"></div>
+        </div>
+      </div>
+
+      <div class="section" id="sec-categories">
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <h1>📂 Danh mục</h1>
+            <p>Quản lý danh mục sản phẩm</p>
+          </div>
+          <button class="btn btn-primary" onclick="openCategoryModal()">
+            <span class="material-symbols-rounded" style="font-size:16px">add</span> Thêm danh mục
+          </button>
+        </div>
+        <div class="card">
+          <div id="categoriesTable"></div>
+        </div>
+      </div>
+
+      <!-- Category Modal -->
+      <div class="modal-overlay" id="categoryModal">
+        <div class="modal" style="width:420px">
+          <h3 id="categoryModalTitle">Thêm danh mục</h3>
+          <input type="hidden" id="categoryEditId">
+          <div class="form-group">
+            <label>Emoji</label>
+            <input type="text" id="categoryEmoji" value="📦" maxlength="4" style="max-width:80px;text-align:center;font-size:20px">
+          </div>
+          <div class="form-group">
+            <label>Tên danh mục *</label>
+            <input type="text" id="categoryName" placeholder="VD: Tài khoản Premium">
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeCategoryModal()">Hủy</button>
+            <button class="btn btn-primary" onclick="saveCategory()">Lưu</button>
+          </div>
         </div>
       </div>
 
@@ -865,6 +903,12 @@ Số Lượng Đang Hiện Có 10"
       <div class="form-group"><label>Giá (VNĐ)</label><input type="number" id="pPrice" placeholder="65000"></div>
       <div class="form-group"><label>Mô tả</label><input id="pDesc" placeholder="Mô tả ngắn"></div>
       <div class="form-group"><label>Ghi chú</label><input id="pNote" placeholder="Lưu ý cho khách"></div>
+      <div class="form-group">
+        <label>Danh mục</label>
+        <select id="pCategory">
+          <option value="">— Không phân loại —</option>
+        </select>
+      </div>
       <div class="form-group">
         <label>Loại sản phẩm</label>
         <select id="pType" onchange="toggleProductTypeFields()">
@@ -1088,6 +1132,7 @@ Số Lượng Đang Hiện Có 10"
       event.currentTarget.classList.add('active');
       if (name === 'dashboard') loadDashboard();
       if (name === 'products') loadProducts();
+      if (name === 'categories') loadCategories();
       if (name === 'credentials') { await populateProductSelects(); loadCredentials(); }
       if (name === 'orders') loadOrders();
       if (name === 'customers') loadCustomers();
@@ -1107,6 +1152,119 @@ Số Lượng Đang Hiện Có 10"
           <div class="stat-card"><div class="icon red"><span class="material-symbols-rounded">payments</span></div><div class="label">Doanh thu</div><div class="value money">${formatMoney(s.totalRevenue)}</div></div>
         `;
         renderOrdersTable(data.recentOrders, 'recentOrdersTable');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function populateCategorySelect(selectedId = null) {
+      const sel = document.getElementById('pCategory');
+      sel.innerHTML = '<option value="">— Không phân loại —</option>';
+      try {
+        const cats = await apiFetch('/categories');
+        cats.filter(c => Number(c.is_active)).forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = `${c.emoji || '📦'} ${c.name}`;
+          if (selectedId && Number(selectedId) === c.id) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      } catch (e) { console.warn('Failed to load categories', e); }
+    }
+
+    // ==================== Categories ====================
+    async function loadCategories() {
+      try {
+        const cats = await apiFetch('/categories');
+        if (!cats.length) {
+          document.getElementById('categoriesTable').innerHTML = `
+            <div class="empty-state">
+              <span class="material-symbols-rounded">category</span>
+              <p>Chưa có danh mục nào</p>
+              <button class="btn btn-primary" onclick="openCategoryModal()" style="margin-top:12px">Thêm danh mục đầu tiên</button>
+            </div>`;
+          return;
+        }
+        let html = '<table><tr><th style="width:60px">Emoji</th><th>Tên danh mục</th><th>Số SP</th><th>Trạng thái</th><th></th></tr>';
+        cats.forEach(c => {
+          const active = Number(c.is_active);
+          html += `<tr>
+            <td style="font-size:24px;text-align:center">${c.emoji || '📦'}</td>
+            <td><strong>${c.name}</strong></td>
+            <td>${c.product_count || 0} sản phẩm</td>
+            <td><span class="badge ${active ? 'badge-success' : 'badge-muted'}">${active ? 'Active' : 'Ẩn'}</span></td>
+            <td>
+              <div class="toolbar" style="justify-content:flex-end">
+                <button class="btn btn-sm btn-ghost" onclick="editCategory(${c.id}, '${(c.name || '').replace(/'/g, "\\'")}', '${c.emoji || '📦'}')">
+                  <span class="material-symbols-rounded" style="font-size:14px">edit</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="toggleCategory(${c.id}, ${active})" title="${active ? 'Ẩn danh mục' : 'Hiện danh mục'}">
+                  <span class="material-symbols-rounded" style="font-size:14px">${active ? 'visibility_off' : 'visibility'}</span>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteCategory(${c.id}, '${(c.name || '').replace(/'/g, "\\'")}')" ${c.product_count > 0 ? 'title="SP sẽ chuyển về Không phân loại"' : ''}>
+                  <span class="material-symbols-rounded" style="font-size:14px">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>`;
+        });
+        html += '</table>';
+        document.getElementById('categoriesTable').innerHTML = html;
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function openCategoryModal(id = null) {
+      document.getElementById('categoryEditId').value = id || '';
+      document.getElementById('categoryName').value = '';
+      document.getElementById('categoryEmoji').value = '📦';
+      document.getElementById('categoryModalTitle').textContent = id ? 'Sửa danh mục' : 'Thêm danh mục';
+      document.getElementById('categoryModal').classList.add('active');
+      document.getElementById('categoryName').focus();
+    }
+
+    function editCategory(id, name, emoji) {
+      document.getElementById('categoryEditId').value = id;
+      document.getElementById('categoryName').value = name;
+      document.getElementById('categoryEmoji').value = emoji;
+      document.getElementById('categoryModalTitle').textContent = 'Sửa danh mục';
+      document.getElementById('categoryModal').classList.add('active');
+      document.getElementById('categoryName').focus();
+    }
+
+    function closeCategoryModal() {
+      document.getElementById('categoryModal').classList.remove('active');
+    }
+
+    async function saveCategory() {
+      const id = document.getElementById('categoryEditId').value;
+      const name = document.getElementById('categoryName').value.trim();
+      const emoji = document.getElementById('categoryEmoji').value.trim() || '📦';
+      if (!name) { toast('Tên danh mục không được để trống', 'error'); return; }
+      try {
+        if (id) {
+          await apiFetch(`/categories/${id}`, 'PUT', { name, emoji });
+          toast('Đã cập nhật danh mục');
+        } else {
+          await apiFetch('/categories', 'POST', { name, emoji });
+          toast('Đã thêm danh mục');
+        }
+        closeCategoryModal();
+        loadCategories();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function toggleCategory(id, currentActive) {
+      try {
+        await apiFetch(`/categories/${id}`, 'PUT', { is_active: currentActive ? false : true });
+        toast(currentActive ? 'Đã ẩn danh mục' : 'Đã hiện danh mục');
+        loadCategories();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function deleteCategory(id, name) {
+      if (!confirm(`Xóa danh mục "${name}"?\nCác SP thuộc danh mục sẽ chuyển về Không phân loại.`)) return;
+      try {
+        await apiFetch(`/categories/${id}`, 'DELETE');
+        toast('Đã xóa danh mục');
+        loadCategories();
       } catch (e) { toast(e.message, 'error'); }
     }
 
@@ -1300,6 +1458,9 @@ Số Lượng Đang Hiện Có 10"
       document.getElementById('pDesc').value = product ? (product.description || '') : '';
       document.getElementById('pNote').value = product ? (product.note || '') : '';
 
+      // Populate category dropdown
+      populateCategorySelect(product ? product.category_id : null);
+
       // Product type
       const pType = product ? (product.product_type || 'credential') : 'credential';
       document.getElementById('pType').value = pType;
@@ -1386,6 +1547,7 @@ Số Lượng Đang Hiện Có 10"
         price: document.getElementById('pPrice').value,
         description: document.getElementById('pDesc').value,
         note: document.getElementById('pNote').value,
+        categoryId: document.getElementById('pCategory').value || null,
         productType,
         credentialFields: productType === 'credential' ? credentialFields : undefined,
         customerFields: (productType === 'invite' || productType === 'preorder') ? getCustomerFieldsFromBuilder() : undefined,

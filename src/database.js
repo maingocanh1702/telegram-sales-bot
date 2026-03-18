@@ -172,6 +172,48 @@ async function initDatabase() {
     )
   `);
 
+    // User language preferences
+    db.run(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      telegram_user_id INTEGER NOT NULL,
+      language TEXT DEFAULT 'vi',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(telegram_user_id)
+    )
+  `);
+
+    // Cart items (multi-item shopping cart)
+    db.run(`
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, product_id),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    )
+  `);
+
+    // Order items (multi-item orders)
+    db.run(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      product_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      unit_price INTEGER NOT NULL,
+      subtotal INTEGER NOT NULL,
+      delivery_status TEXT DEFAULT 'pending',
+      delivered_at TEXT,
+      FOREIGN KEY (order_id) REFERENCES orders(id),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    )
+  `);
+
     // ==================== Migrations ====================
     // Add new columns to existing tables (safe to run multiple times)
     const migrations = [
@@ -276,11 +318,46 @@ function getCategories() {
     return results;
 }
 
+function getAllCategories() {
+    const stmt = db.prepare('SELECT * FROM categories ORDER BY sort_order');
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
 function addCategory(name, emoji = '📦') {
     db.run('INSERT INTO categories (name, emoji) VALUES (?, ?)', [name, emoji]);
     const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
     saveDatabase();
     return id;
+}
+
+function updateCategory(id, updates) {
+    const fields = [];
+    const values = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.emoji !== undefined) { fields.push('emoji = ?'); values.push(updates.emoji); }
+    if (updates.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(updates.sort_order); }
+    if (updates.is_active !== undefined) { fields.push('is_active = ?'); values.push(updates.is_active); }
+    if (fields.length === 0) return;
+    values.push(id);
+    db.run(`UPDATE categories SET ${fields.join(', ')} WHERE id = ?`, values);
+    saveDatabase();
+}
+
+function deleteCategory(id) {
+    // Soft delete — set is_active = 0, unlink products
+    db.run('UPDATE categories SET is_active = 0 WHERE id = ?', [id]);
+    db.run('UPDATE products SET category_id = NULL WHERE category_id = ?', [id]);
+    saveDatabase();
+}
+
+function reorderCategories(orderedIds) {
+    orderedIds.forEach((id, index) => {
+        db.run('UPDATE categories SET sort_order = ? WHERE id = ?', [index, id]);
+    });
+    saveDatabase();
 }
 
 // ==================== Products ====================
@@ -1029,7 +1106,11 @@ module.exports = {
     getDb,
     // Categories
     getCategories,
+    getAllCategories,
     addCategory,
+    updateCategory,
+    deleteCategory,
+    reorderCategories,
     // Products
     getProducts,
     getFeaturedProducts,
@@ -1097,6 +1178,23 @@ module.exports = {
     getProductNamesByIds,
     // User purchase limit
     getUserProductPurchaseCount,
+    // Language preferences
+    getUserLanguage,
+    setUserLanguage,
+    // Cart
+    addToCart,
+    getCart,
+    getCartCount,
+    updateCartQty,
+    removeFromCart,
+    clearCart,
+    cleanExpiredCartItems,
+    // Order items
+    createOrderWithItems,
+    getOrderItems,
+    updateOrderItemStatus,
+    // Payment methods
+    getEnabledPaymentMethods,
 };
 
 // ==================== Settings ====================
@@ -1507,4 +1605,225 @@ function getUserProductPurchaseCount(userId, productId) {
         [userId, productId]
     );
     return result.length > 0 ? result[0].values[0][0] : 0;
+}
+
+// ==================== Language Preferences ====================
+
+function getUserLanguage(userId) {
+    try {
+        const result = db.exec(
+            'SELECT language FROM user_preferences WHERE telegram_user_id = ?',
+            [userId]
+        );
+        if (result.length > 0 && result[0].values.length > 0) {
+            return result[0].values[0][0] || 'vi';
+        }
+    } catch (e) { /* table may not exist yet */ }
+    return 'vi';
+}
+
+function setUserLanguage(userId, lang) {
+    db.run(
+        `INSERT INTO user_preferences (telegram_user_id, language, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(telegram_user_id) DO UPDATE SET language = ?, updated_at = datetime('now')`,
+        [userId, lang, lang]
+    );
+    saveDatabase();
+}
+
+// ==================== Cart ====================
+
+function addToCart(userId, productId, quantity = 1) {
+    db.run(
+        `INSERT INTO cart_items (user_id, product_id, quantity)
+         VALUES (?, ?, ?)
+         ON CONFLICT(user_id, product_id) DO UPDATE SET quantity = quantity + ?`,
+        [userId, productId, quantity, quantity]
+    );
+    saveDatabase();
+}
+
+function getCart(userId) {
+    const stmt = db.prepare(`
+    SELECT ci.*, p.name, p.price, p.product_type, p.delivery_hours, p.is_active,
+           p.subscription_days, p.warranty_days,
+           (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND is_sold = 0) as stock
+    FROM cart_items ci
+    JOIN products p ON ci.product_id = p.id
+    WHERE ci.user_id = ?
+    ORDER BY ci.created_at
+  `);
+    stmt.bind([userId]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function getCartCount(userId) {
+    const result = db.exec(
+        'SELECT COALESCE(SUM(quantity), 0) as total FROM cart_items WHERE user_id = ?',
+        [userId]
+    );
+    return result.length > 0 ? result[0].values[0][0] : 0;
+}
+
+function updateCartQty(userId, productId, quantity) {
+    if (quantity <= 0) {
+        return removeFromCart(userId, productId);
+    }
+    db.run(
+        'UPDATE cart_items SET quantity = ? WHERE user_id = ? AND product_id = ?',
+        [quantity, userId, productId]
+    );
+    saveDatabase();
+}
+
+function removeFromCart(userId, productId) {
+    db.run(
+        'DELETE FROM cart_items WHERE user_id = ? AND product_id = ?',
+        [userId, productId]
+    );
+    saveDatabase();
+}
+
+function clearCart(userId) {
+    db.run('DELETE FROM cart_items WHERE user_id = ?', [userId]);
+    saveDatabase();
+}
+
+/**
+ * Remove cart items older than 7 days
+ * @returns {number} Number of deleted items
+ */
+function cleanExpiredCartItems() {
+    const result = db.run(
+        "DELETE FROM cart_items WHERE created_at < datetime('now', '-7 days')"
+    );
+    if (result.changes > 0) {
+        saveDatabase();
+        console.log(`🧹 Cleaned ${result.changes} expired cart items (>7 days)`);
+    }
+    return result.changes || 0;
+}
+
+// ==================== Order Items ====================
+
+/**
+ * Create an order with multiple items from cart
+ * @param {Object} params - Order params
+ * @param {Array} items - Array of { productId, productName, quantity, unitPrice, subtotal }
+ * @returns {string} orderCode
+ */
+function createOrderWithItems(params, items) {
+    const {
+        telegramUserId, telegramUsername, totalAmount,
+        expiresAt, customerEmail, discountCode, discountAmount,
+        paymentMethod
+    } = params;
+
+    const orderCode = generateOrderCode();
+    const primaryItem = items[0] || {};
+
+    db.run(
+        `INSERT INTO orders (
+      order_code, telegram_user_id, telegram_username,
+      product_id, product_name, quantity, unit_price, total_amount,
+      status, customer_email, expires_at, discount_code, discount_amount,
+      payment_method, source
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, 'bot')`,
+        [
+            orderCode, telegramUserId, telegramUsername,
+            primaryItem.productId || 0,
+            items.length === 1 ? primaryItem.productName : `${items.length} sản phẩm`,
+            items.reduce((sum, i) => sum + i.quantity, 0),
+            primaryItem.unitPrice || 0,
+            totalAmount,
+            customerEmail || null,
+            expiresAt,
+            discountCode || null,
+            discountAmount || 0,
+            paymentMethod || 'vietqr',
+        ]
+    );
+
+    // Get the order id
+    const orderResult = db.exec('SELECT id FROM orders WHERE order_code = ?', [orderCode]);
+    const orderId = orderResult[0].values[0][0];
+
+    // Insert order items
+    for (const item of items) {
+        db.run(
+            `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+            [orderId, item.productId, item.productName, item.quantity, item.unitPrice, item.subtotal]
+        );
+    }
+
+    saveDatabase();
+    return orderCode;
+}
+
+function getOrderItems(orderCodeOrId) {
+    // Try by order_code first
+    let stmt;
+    if (typeof orderCodeOrId === 'string') {
+        stmt = db.prepare(`
+      SELECT oi.*, p.product_type, p.delivery_hours, p.subscription_days, p.warranty_days
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE o.order_code = ?
+      ORDER BY oi.id
+    `);
+    } else {
+        stmt = db.prepare(`
+      SELECT oi.*, p.product_type, p.delivery_hours, p.subscription_days, p.warranty_days
+      FROM order_items oi
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = ?
+      ORDER BY oi.id
+    `);
+    }
+    stmt.bind([orderCodeOrId]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
+function updateOrderItemStatus(orderItemId, status) {
+    const deliveredAt = status === 'delivered' ? "datetime('now')" : 'NULL';
+    db.run(
+        `UPDATE order_items SET delivery_status = ?, delivered_at = ${deliveredAt} WHERE id = ?`,
+        [status, orderItemId]
+    );
+    saveDatabase();
+}
+
+// ==================== Payment Methods ====================
+
+function getEnabledPaymentMethods() {
+    const methods = [];
+
+    // VietQR — available if bank is configured
+    const bank = getBankConfig();
+    if (bank.accountNo) {
+        methods.push({ id: 'vietqr', label: 'VietQR', icon: '🏦' });
+    }
+
+    // USDT — available if wallet is configured
+    const usdtWallet = getSetting('usdt_wallet');
+    if (usdtWallet) {
+        methods.push({ id: 'usdt', label: 'USDT (TRC20)', icon: '💰' });
+    }
+
+    // PayPal — available if PayPal is configured
+    const paypalEmail = getSetting('paypal_email');
+    if (paypalEmail) {
+        methods.push({ id: 'paypal', label: 'PayPal', icon: '💳' });
+    }
+
+    return methods;
 }

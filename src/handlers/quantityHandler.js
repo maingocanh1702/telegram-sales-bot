@@ -1,6 +1,7 @@
 const db = require('../database');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
+const { t, getLang } = require('../locales');
 
 // Track users waiting for custom quantity input
 const waitingForQuantity = new Map();
@@ -20,8 +21,19 @@ function setupQuantityHandler(bot) {
             return;
         }
 
-        // Quick quantity selection
+        // Quick quantity selection → show Buy Now / Add to Cart choice
         if (data.startsWith(CALLBACKS.QTY_PREFIX) && !data.startsWith(CALLBACKS.QTY_CUSTOM_PREFIX)) {
+            const parts = data.split('_');
+            const productId = parseInt(parts[1]);
+            const quantity = parseInt(parts[2]);
+            bot.answerCallbackQuery(query.id);
+
+            showBuyOrCartChoice(bot, query.message.chat.id, query.message.message_id, productId, quantity, query.from);
+            return;
+        }
+
+        // "Buy Now" after quantity chosen → proceed to checkout
+        if (data.startsWith('buynow_')) {
             const parts = data.split('_');
             const productId = parseInt(parts[1]);
             const quantity = parseInt(parts[2]);
@@ -37,7 +49,6 @@ function setupQuantityHandler(bot) {
                 quantity,
             };
 
-            // Invite and preorder products need email first
             if (product && (product.product_type === 'invite' || product.product_type === 'preorder')) {
                 bot.emit('email_needed', eventData);
             } else {
@@ -66,25 +77,13 @@ function setupQuantityHandler(bot) {
         waitingForQuantity.delete(userId);
 
         if (isNaN(quantity) || quantity <= 0) {
-            bot.sendMessage(msg.chat.id, '❌ Số lượng không hợp lệ. Vui lòng thử lại.');
+            const lang = getLang(userId, db.getUserLanguage);
+            bot.sendMessage(msg.chat.id, t('invalid_quantity', lang, { max: 999 }));
             return;
         }
 
-        const product = db.getProductById(productId);
-        const eventData = {
-            chatId: msg.chat.id,
-            messageId: null,
-            userId: msg.from.id,
-            username: msg.from.username || msg.from.first_name,
-            productId,
-            quantity,
-        };
-
-        if (product && (product.product_type === 'invite' || product.product_type === 'preorder')) {
-            bot.emit('email_needed', eventData);
-        } else {
-            bot.emit('quantity_selected', eventData);
-        }
+        // Show Buy Now / Add to Cart choice (send new message since there's no messageId to edit)
+        showBuyOrCartChoice(bot, msg.chat.id, null, productId, quantity, msg.from);
     });
 }
 
@@ -95,9 +94,8 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
     const product = db.getProductById(productId);
     if (!product) return;
 
-    let text = `🔢 Chọn số lượng cho **${product.name}**:\n`;
-    text += `💰 Giá: ${formatPrice(product.price)} | 📊 Tồn kho: ${product.stock}\n\n`;
-    text += '👇 Chọn số lượng nhanh hoặc nhập tùy chỉnh:';
+    let text = t('select_quantity', 'vi', { product: product.name }) + '\n';
+    text += `💰 ${formatPrice(product.price)} | 📊 ${product.stock}\n\n`;
 
     const keyboard = [
         [
@@ -108,8 +106,8 @@ function showQuantitySelection(bot, chatId, messageId, productId) {
             { text: '5', callback_data: `qty_${productId}_5` },
             { text: '10', callback_data: `qty_${productId}_10` },
         ],
-        [{ text: '✏️ Tùy chỉnh', callback_data: `${CALLBACKS.QTY_CUSTOM_PREFIX}${productId}` }],
-        [{ text: '↩️ Quay lại', callback_data: `${CALLBACKS.PRODUCT_PREFIX}${productId}` }],
+        [{ text: t('btn_custom_qty', 'vi'), callback_data: `${CALLBACKS.QTY_CUSTOM_PREFIX}${productId}` }],
+        [{ text: t('btn_back', 'vi'), callback_data: `${CALLBACKS.PRODUCT_PREFIX}${productId}` }],
     ];
 
     // Filter out quantities larger than stock
@@ -150,10 +148,49 @@ function promptCustomQuantity(bot, chatId, messageId, productId, userId) {
     waitingForQuantity.set(userId, { productId, messageId });
 
     bot.sendMessage(chatId,
-        `✏️ Nhập số lượng muốn mua cho **${product.name}**:\n` +
-        `(Tồn kho: ${product.stock})`,
+        t('enter_custom_qty', 'vi', { max: product.stock }),
         { parse_mode: 'Markdown' }
     );
+}
+
+/**
+ * Show Buy Now / Add to Cart choice after quantity is selected
+ */
+function showBuyOrCartChoice(bot, chatId, messageId, productId, quantity, fromUser) {
+    const product = db.getProductById(productId);
+    if (!product) return;
+
+    const lang = getLang(fromUser.id, db.getUserLanguage);
+    const total = product.price * quantity;
+
+    let text = `📦 **${product.name}**\n`;
+    text += `━━━━━━━━━━━━━━━━━━\n`;
+    text += `📊 Số lượng: **${quantity}**\n`;
+    text += `💰 Tổng: **${formatPrice(total)}**\n\n`;
+    text += `🛒 Bạn muốn mua ngay hay thêm vào giỏ hàng?`;
+
+    const keyboard = [
+        [
+            { text: t('btn_buy_now', lang), callback_data: `buynow_${productId}_${quantity}` },
+            { text: t('btn_add_to_cart', lang), callback_data: `${CALLBACKS.CART_ADD_QTY_PREFIX}${productId}_${quantity}` },
+        ],
+        [{ text: t('btn_back', lang), callback_data: `${CALLBACKS.BUY_PREFIX}${productId}` }],
+    ];
+
+    const opts = {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard },
+    };
+
+    if (messageId) {
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...opts }).catch(err => {
+            if (!err.message?.includes('message is not modified')) {
+                console.warn('[Quantity] editMessage failed:', err.message);
+            }
+        });
+    } else {
+        bot.sendMessage(chatId, text, opts);
+    }
 }
 
 /**

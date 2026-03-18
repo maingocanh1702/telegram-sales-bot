@@ -30,8 +30,29 @@ const CALLBACKS = {
     DISCOUNT_SKIP: 'discount_skip',
     DISCOUNT_ENTER: 'discount_enter',
 
+    // Language
+    LANG_VI: 'lang_vi',
+    LANG_EN: 'lang_en',
+    MENU_LANGUAGE: 'menu_language',
+
+    // Cart
+    CART_VIEW: 'cart_view',
+    CART_ADD_PREFIX: 'cart_add_',
+    CART_PLUS_PREFIX: 'cart_plus_',
+    CART_MINUS_PREFIX: 'cart_minus_',
+    CART_REMOVE_PREFIX: 'cart_rm_',
+    CART_CLEAR: 'cart_clear',
+    CART_CHECKOUT: 'cart_checkout',
+    CART_ADD_QTY_PREFIX: 'cartaddq_',
+
+    // Payment method
+    PAY_VIETQR: 'pay_vietqr',
+    PAY_USDT: 'pay_usdt',
+    PAY_PAYPAL: 'pay_paypal',
+
     // Misc
     NOOP: 'noop',
 };
 
 module.exports = { CALLBACKS };
+

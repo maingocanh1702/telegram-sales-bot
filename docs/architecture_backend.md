@@ -1,6 +1,6 @@
 # CloudX Shop — Backend Feature Doc
 
-> **Phiên bản:** v1.0.0 | **Ngày:** 2026-03-16
+> **Phiên bản:** v1.1.0 | **Ngày:** 2026-03-18
 
 ---
 
@@ -35,8 +35,15 @@ Mỗi handler là module độc lập, export `setup{Name}Handler(bot)` hoặc `
 | `helpHandler.js` | Bot | /help, /huongdan |
 | `adminHandler.js` | Bot | Admin bot commands (/admin, /confirm, /stock) |
 | `webhookHandler.js` | Express | SePay webhook processing |
+| `paypalWebhookHandler.js` | Express | PayPal webhook processing (NEW) |
 | `adminAPI.js` | Express | REST API cho admin panel (40+ endpoints) |
 | `callbacks.js` | Shared | Callback query string constants |
+| `i18n.js` | Shared | Translation module — `t(key, lang, params)` (NEW) |
+| `exchangeRateService.js` | Service | Tỉ giá VND/USD cache + fetch (NEW) |
+| `usdtPoller.js` | Service | TronGrid polling USDT payments (NEW) |
+| `authController.js` | Express | Login (email+pass, Google OAuth), JWT, refresh token (PLANNED) |
+| `rbacMiddleware.js` | Express | Auth middleware + permission check per route (PLANNED) |
+| `platformAPI.js` | Express | CRUD platform users, feature flags, shop members (PLANNED) |
 
 ### 2.2 State Management
 
@@ -54,6 +61,20 @@ const waitingForDiscount = new Map();
 
 > **⚠️ Lưu ý:** State mất khi bot restart. User cần bắt đầu lại flow.
 
+### 2.3 i18n & Language Cache
+
+```javascript
+// i18n.js — translation lookup
+const locales = { vi: require('./locales/vi'), en: require('./locales/en') };
+function t(key, lang = 'vi', params = {}) { ... }
+
+// menuHandler.js — per-user language cache
+const languageCache = new Map();
+// key: `${userId}_${shopId}` → 'vi' | 'en'
+```
+
+> Translation strategy: **Hybrid** — UI text (static locale) + admin content (giữ nguyên) + dynamic messages (template interpolation).
+
 ---
 
 ## 3. Core Business Logic
@@ -61,14 +82,17 @@ const waitingForDiscount = new Map();
 ### 3.1 Order Creation (`orderHandler.js`)
 
 ```
-Input: productId, quantity, email, discountCode (optional)
+Input: productId, quantity, email, discountCode (optional), paymentMethod
   → Validate stock availability
   → Calculate total (price × qty - discount)
   → Generate order code: 'ORD' + Date.now() + random
-  → Generate VietQR URL
-  → Create order record (status: 'pending')
-  → Set expiry time (ORDER_EXPIRY_MINUTES)
-  → Send QR message to customer
+  → If paymentMethod = 'usdt' or 'paypal':
+     → Fetch exchange rate (VND/USD)
+     → Calculate foreign amount
+  → Generate payment screen (VietQR / USDT wallet / PayPal link)
+  → Create order record (status: 'pending', payment_method, exchange_rate)
+  → Set expiry time (5-60 min tùy level + method)
+  → Send payment message to customer (in user's language)
 ```
 
 ### 3.2 Payment Verification (`webhookHandler.js`)
@@ -85,10 +109,34 @@ Processing:
   5. Verify: transferAmount >= order.total_amount
   6. Update status → 'paid'
   7. Record discount usage (if applicable)
-  8. Notify customer: "Đang gửi thông tin sản phẩm..."
+  8. Notify customer (in user's language): payment received
   9. Call deliverCredentials()
   10. Notify admin about payment
 ```
+
+### 3.2b USDT Verification (`usdtPoller.js`)
+
+```
+Poll interval: 30 seconds
+  1. Get pending orders WHERE payment_method = 'usdt'
+  2. For each: query TronGrid API for wallet transactions
+  3. Match by: wallet address + amount + timing window
+  4. If matched + confirmed → confirmPayment() + deliverCredentials()
+  5. Track daily API count (TronGrid free: 10K/day)
+```
+
+### 3.2c PayPal Verification (`paypalWebhookHandler.js`)
+
+```
+PayPal POST webhook:
+  1. Verify PayPal-Transmission-Sig header
+  2. If PAYMENT.CAPTURE.COMPLETED:
+     → Find order by payment_tx_ref
+     → Verify amount ≥ expected
+     → confirmPayment() + deliverCredentials()
+  3. If CUSTOMER.DISPUTE.CREATED:
+     → Log dispute + alert admin
+  4. Always return 200
 
 **Error handling (v1.3+):**
 
@@ -194,6 +242,9 @@ Daily check:
 | Banks | `getBankAccounts()`, `addBankAccount()`, `activateBankAccount()` |
 | Settings | `getSetting()`, `setSetting()` |
 | Subscription | `setSubscriptionExpiry()`, `getExpiringOrders()` |
+| Payment Config | `getPaymentConfigs()`, `upsertPaymentConfig()`, `deletePaymentConfig()` |
+| Exchange Rate | `getCachedRate()`, `updateCachedRate()` |
+| User Preferences | `getUserLanguage()`, `setUserLanguage()`, `hasUserPreference()` |
 
 ### 4.2 Data Persistence
 
@@ -241,6 +292,11 @@ for (const sql of migrations) {
 | 8 | Cross-Feature | Product deleted with pending orders | Soft delete (is_active=0), orders unaffected |
 | 9 | Data Integrity | Bank account change mid-order | QR URL uses bank config at order creation time |
 | 10 | Security | Group check fails (bot not in group) | getChatMember throws → catch → deny discount |
+| 11 | Cross-Feature | USDT underpaid (gas fee) | Tolerance: received ≥ expected - $0.01 |
+| 12 | Security | PayPal webhook spoofing | Verify PayPal-Transmission-Sig via PayPal API |
+| 13 | Cross-Feature | Exchange rate changes mid-order | Rate locked at order creation, stored in DB |
+| 14 | Reliability | TronGrid API rate limit | Track daily count, degrade polling frequency |
+| 15 | Data Integrity | Translation key missing | Fallback: return VI string, then raw key |
 
 ---
 
@@ -263,3 +319,7 @@ for (const sql of migrations) {
 | `ORDER_EXPIRY_MINUTES` | — | 5 | Pending order timeout |
 | `SUPPORT_USERNAME` | — | @maingocanh | Support contact |
 | `NODE_ENV` | — | production | dev/production |
+| `ENCRYPTION_KEY` | ✅* | — | AES-256 key for PayPal credentials (*nếu dùng PayPal) |
+| `EXCHANGE_RATE_API_KEY` | — | — | ExchangeRate-API key (cho USDT/PayPal) |
+| `TRONGRID_API_KEY` | — | — | TronGrid API key (cho USDT, optional) |
+| `USDT_POLL_INTERVAL_SECONDS` | — | 30 | USDT poll frequency |

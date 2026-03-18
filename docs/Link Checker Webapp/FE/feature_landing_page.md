@@ -44,7 +44,7 @@ Landing page giới thiệu tool + quảng bá BotShop SaaS. Gồm Hero section 
 |---------|---------|
 | Badge | "✨ Miễn phí — không cần đăng ký" |
 | Headline | "Kiểm tra link credential nhanh chóng" |
-| Sub-text | "Check trạng thái link Claude, ChatGPT, Netflix..." |
+| Sub-text | "Check trạng thái link Claude, ChatGPT, Netflix, Spotify..." |
 | CTA | "🔍 Bắt đầu check ngay" (scrolls to #checker) |
 
 ### BotShop Promo Section

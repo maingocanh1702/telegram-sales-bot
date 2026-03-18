@@ -2,6 +2,7 @@ const db = require('../database');
 const config = require('../config');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
+const { t, getLang } = require('../locales');
 
 /**
  * Deliver credentials or notify admin for invite-type products

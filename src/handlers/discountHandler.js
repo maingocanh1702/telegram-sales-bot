@@ -1,6 +1,7 @@
 const db = require('../database');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
+const { t, getLang } = require('../locales');
 
 // Track users waiting for discount code input
 const waitingForDiscount = new Map();
@@ -51,8 +52,9 @@ function setupDiscountHandler(bot) {
             if (!state) return;
 
             state.awaitingInput = true;
+            const lang = getLang(userId, db.getUserLanguage);
             bot.sendMessage(query.message.chat.id,
-                '🎟 Nhập mã giảm giá của bạn:',
+                t('discount_enter_prompt', lang),
                 { parse_mode: 'Markdown' }
             );
             return;
@@ -146,29 +148,33 @@ function promptDiscount(bot, data) {
         awaitingInput: false,
     });
 
+    const lang = getLang(userId, db.getUserLanguage);
+
     // Check if new user has available new-user discount
     let newUserHint = '';
     if (db.isNewUser(userId)) {
         const activeCodes = db.getActiveDiscountCodes();
         const hasNewUserCode = activeCodes.some(c => c.is_new_user_only);
         if (hasNewUserCode) {
-            newUserHint = '\n🎉 *Bạn có mã giảm giá dành cho khách mới!* Xem ngay tại /discount\n';
+            newUserHint = t('discount_new_user_hint', lang);
         }
     }
 
-    const text = `🎟 **Bạn có mã giảm giá không?**\n\n` +
-        `📦 SP: **${product ? product.name : 'N/A'}** x${data.quantity}\n` +
-        `💰 Tạm tính: **${formatPrice(orderAmount)}**\n` +
-        newUserHint + `\n` +
-        `💡 Gõ /discount để xem mã giảm giá hiện có\n` +
-        `Chọn bên dưới:`;
+    const text = t('discount_prompt', lang) +
+        t('discount_prompt_product', lang, {
+            product: product ? product.name : 'N/A',
+            qty: data.quantity,
+            amount: formatPrice(orderAmount),
+        }) +
+        newUserHint + '\n' +
+        t('discount_prompt_hint', lang);
 
     bot.sendMessage(chatId, text, {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                [{ text: '🎟 Nhập mã giảm giá', callback_data: CALLBACKS.DISCOUNT_ENTER }],
-                [{ text: '⏭ Bỏ qua — Thanh toán ngay', callback_data: CALLBACKS.DISCOUNT_SKIP }],
+                [{ text: t('btn_enter_discount', lang), callback_data: CALLBACKS.DISCOUNT_ENTER }],
+                [{ text: t('btn_skip_discount', lang), callback_data: CALLBACKS.DISCOUNT_SKIP }],
             ],
         },
     });
@@ -355,4 +361,4 @@ function formatDiscountLine(discount, groupNames = {}) {
     return line;
 }
 
-module.exports = { setupDiscountHandler, isWaitingForDiscount };
+module.exports = { setupDiscountHandler, isWaitingForDiscount, showAvailableDiscounts };

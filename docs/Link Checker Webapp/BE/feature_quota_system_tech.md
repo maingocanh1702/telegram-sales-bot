@@ -43,8 +43,22 @@ CREATE TABLE IF NOT EXISTS checker_quota (
 **Response 200 (disabled):**
 
 ```json
-{ "enabled": false }
+{ "enabled": false, "quota": { "daily": 0, "used": 0, "remaining": 0 } }
 ```
+
+### POST `/api/checker/check` — Response Format
+
+**Response 200:**
+
+```json
+{
+  "results": [{ "url": "...", "status": "live", "detail": "...", "source": "cache|api|error" }],
+  "quota": { "daily": 20, "used": 8, "remaining": 12 },
+  "stats": { "total": 5, "cached": 2, "checked": 3 }
+}
+```
+
+> `stats.cached` = số links lấy từ cache (free), `stats.checked` = số links gọi ScraperAPI.
 
 ### Admin Endpoints (auth required)
 
@@ -71,10 +85,14 @@ const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
 // 2. SELECT count FROM checker_quota WHERE ip = ? AND date = ?
 // 3. Compare count vs checker_daily_quota setting
 // 4. If count >= quota → 429 QUOTA_EXCEEDED
-// 5. After successful check → UPDATE count + urls.length
+// 5. Limit batch to remaining quota: toCheck.slice(0, remaining)
+// 6. Phase 1: Cache check (instant, free)
+// 7. Phase 2: ScraperAPI for new URLs (concurrency = 3)
+// 8. After check → UPDATE count + linksToProcess.length
+//    ⚠️ Quota đếm TẤT CẢ links processed (cả cache hits), không chỉ API calls
 
-// INSERT OR REPLACE INTO checker_quota (ip, date, count)
-// VALUES (?, ?, COALESCE((SELECT count FROM checker_quota WHERE ip = ? AND date = ?), 0) + ?)
+// INSERT INTO checker_quota (ip, date, count) VALUES (?, ?, ?)
+// ON CONFLICT(ip, date) DO UPDATE SET count = count + ?
 ```
 
 ### Cleanup (on DB init)
@@ -98,6 +116,7 @@ db.run(`DELETE FROM checker_quota WHERE date < date('now', '-7 days')`);
 | 1 | Security | Spam requests | IP-based quota tự giới hạn |
 | 2 | Security | Proxy/VPN switch IP | Accepted trade-off (free tool) |
 | 3 | Data Integrity | Quota tracking DB error | Allow check (graceful degradation) |
+| 9 | Data Integrity | Quota counts cache hits | Đếm tất cả links (cả cache), không chỉ ScraperAPI calls |
 | 4 | Cross-Feature | Admin disable mid-check | Current request completes, next blocked |
 | 5 | Data Integrity | Concurrent requests same IP | SQLite single-writer serializes |
 | 6 | Cross-Feature | Admin change quota mid-day | New quota applies immediately |

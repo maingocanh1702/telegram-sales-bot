@@ -1,6 +1,7 @@
 # Feature: Bank Management — Tech Spec (BE)
 
 **Product Spec:** [feature_bank_management.md](../FE/feature_bank_management.md)
+**Unified Settings Spec:** [feature_settings.md](../FE/feature_settings.md) (Tab 1 — Bot & Thanh toán VND)
 **Backend:** Node.js + sql.js (SQLite)
 **Handler:** `src/handlers/adminAPI.js` → `src/database.js`
 
@@ -23,7 +24,9 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 );
 ```
 
-> ⚠️ **Chỉ 1 TK active tại một thời điểm** — dùng để generate VietQR cho đơn hàng.
+> ⚠️ **Chỉ 1 TK primary tại một thời điểm** — dùng để generate VietQR cho đơn hàng.
+
+> ⚠️ **SePay Coupling:** Bank trên admin PHẢI trùng với bank đã setup webhook trên SePay. Nếu không → thanh toán sẽ không auto-confirm.
 
 ---
 
@@ -76,6 +79,25 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 **Validation:** `bank_code`, `account_no`, `account_name` required (400 nếu thiếu)
 
+### Field Specification — `POST /api/admin/bank-accounts`
+
+| Field | Type | Required? | Default | Khi NULL / Không gửi |
+|-------|------|----------|---------|---------------------|
+| `bank_id` | string | Optional | `''` | Empty string, VD: "970436" |
+| `bank_code` | string | ✅ **Required** | — | 400 `MISSING_FIELDS` |
+| `bank_name` | string | Optional | `''` | Empty string |
+| `account_no` | string | ✅ **Required** | — | 400 `MISSING_FIELDS` |
+| `account_name` | string | ✅ **Required** | — | 400 `MISSING_FIELDS` |
+
+**Minimum request example (chỉ required fields):**
+
+```json
+{
+  "bank_code": "VCB",
+  "account_no": "1234567890",
+  "account_name": "NGUYEN VAN A"
+}
+
 **Response 200:**
 
 ```json
@@ -97,6 +119,10 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 2. `UPDATE bank_accounts SET is_active = 1 WHERE id = ?` (activate target)
 
 > ⚠️ **Không có PUT/UPDATE endpoint** — chỉ add/delete/activate. Muốn sửa thông tin → xóa + thêm mới.
+
+### Legacy: Settings API (bank fields)
+
+> `GET/PUT /api/admin/settings` cũng chứa bank config (`bank_id`, `bank_code`, `bank_name`, `bank_account_no`, `bank_account_name`) — đây là legacy fields từ trước khi có `bank_accounts` CRUD. Hiện tại `getBankConfig()` ưu tiên `bank_accounts` table, fallback về env vars. Settings API bank fields **không được dùng cho VietQR generation** nữa.
 
 ### DELETE `/api/admin/bank-accounts/:id` — Xóa TK
 
@@ -156,7 +182,9 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 ---
 
-## 4. Edge Cases
+## 4. Edge Cases (Backend)
+
+**Admin-side (đấy là feature chỉ admin dùng):**
 
 | # | Category | Case | Xử lý |
 |---|----------|------|-------|
@@ -168,6 +196,10 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 | 6 | Cross-Feature | Không có bank_accounts + env rỗng | VietQR generation fails |
 | 7 | Security | STK hiển thị | Admin-only endpoint |
 | 8 | Data Integrity | Không có endpoint UPDATE/PUT | Xóa → thêm lại nếu muốn sửa |
+| 9 | Validation | `bank_code` rỗng | 400 `MISSING_FIELDS` |
+| 10 | Validation | `account_no` rỗng | 400 `MISSING_FIELDS` |
+| 11 | Validation | `account_name` rỗng | 400 `MISSING_FIELDS` |
+| 12 | Data Integrity | Activate TK không tồn tại | 404 `BANK_NOT_FOUND` |
 
 ---
 
@@ -182,7 +214,27 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 ---
 
-## 6. Caching Strategy
+## 6. API Idempotency & Rate Limits
+
+### Idempotency
+
+| Endpoint | Idempotent? | Behavior khi gọi 2 lần |
+|----------|-------------|------------------------|
+| GET `/bank-accounts` | ✅ | Read-only |
+| POST `/bank-accounts` | Không | Tạo duplicate (no unique constraint on account_no) |
+| POST `/:id/activate` | ✅ | Lần 2 → same result (đã active) |
+| DELETE `/:id` | ✅ | Lần 2 → 404 (đã xóa) |
+
+### Rate Limits
+
+| Endpoint | Rate Limit | Scope | Error Code |
+|----------|-----------|-------|------------|
+| POST `/bank-accounts` | 10 req/min | per admin | 429 `BANK_CREATE_RATE_LIMIT` |
+| DELETE `/:id` | 10 req/min | per admin | 429 `BANK_DELETE_RATE_LIMIT` |
+
+---
+
+## 7. Caching Strategy
 
 | Data | Cache | TTL |
 |------|-------|-----|
@@ -191,20 +243,38 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 ---
 
-## 7. Testing Plan
+## 8. Testing Plan
 
 ### Unit Tests
 
-- addBankAccount: first account auto-activates
-- addBankAccount: second account stays inactive
-- setActiveBankAccount: deactivates all, activates target
-- deleteBankAccount: active deleted → auto-promote first remaining
-- deleteBankAccount: inactive deleted → no promotion
-- getBankConfig: active bank exists → return bank info
-- getBankConfig: no bank accounts → fallback to env config
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | addBankAccount first | First account | Auto-activate (is_active=1) |
+| 2 | addBankAccount second | Second account | Stays inactive (is_active=0) |
+| 3 | addBankAccount missing bank_code | No bank_code | 400 MISSING_FIELDS |
+| 4 | addBankAccount missing account_no | No account_no | 400 MISSING_FIELDS |
+| 5 | addBankAccount missing account_name | No account_name | 400 MISSING_FIELDS |
+| 6 | setActiveBankAccount | id=2 | All deactivated, id=2 active |
+| 7 | setActiveBankAccount same | Already active id | No change (idempotent) |
+| 8 | setActiveBankAccount not found | id=999 | 404 BANK_NOT_FOUND |
+| 9 | deleteBankAccount active | Active deleted | Auto-promote first remaining |
+| 10 | deleteBankAccount inactive | Inactive deleted | No promotion needed |
+| 11 | deleteBankAccount last | Only account | No promotion, fallback to env |
+| 12 | deleteBankAccount not found | id=999 | 404 |
+| 13 | getBankConfig with active | Active bank exists | Returns bank info |
+| 14 | getBankConfig no accounts | Empty table | Fallback to env config |
+| 15 | getBankConfig env also empty | No accounts, no env | Returns empty/defaults |
+| 16 | getAllBankAccounts sort | 3 accounts | Active first, then by created_at DESC |
+| 17 | VietQR URL generation | Valid bank config | Correct URL format |
+| 18 | VietQR with amount | amount=100000 | URL includes amount param |
+| 19 | Legacy settings fallback | bank_accounts empty | getBankConfig uses settings table |
+| 20 | addBankAccount full fields | All 5 fields | All saved correctly |
 
 ### Integration Tests
 
-- Full flow: add bank → activate → create order → VietQR uses correct bank
-- Switch bank: activate new → new orders use new bank
-- Delete active: promote next → orders continue working
+| # | Test | Input | Expected |
+|---|------|-------|----------|
+| 1 | Full lifecycle | Add → activate → order → VietQR | QR uses correct bank |
+| 2 | Switch active bank | Add 2 → activate second → new order | New order uses second bank |
+| 3 | Delete active auto-promote | Delete active → remaining promoted | Orders continue working |
+| 4 | Fallback chain | No bank_accounts → env vars | VietQR uses env config |

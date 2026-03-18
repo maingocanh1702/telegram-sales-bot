@@ -1,6 +1,6 @@
 {
     "name": "telegram-sales-bot",
-    "version": "1.0.0",
+    "version": "2.3.0",
     "description": "Telegram auto-sales bot with VietQR payment and SePay webhook verification",
     "main": "src/bot.js",
     "scripts": {

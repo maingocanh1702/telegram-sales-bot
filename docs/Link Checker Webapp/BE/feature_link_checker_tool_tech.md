@@ -4,6 +4,8 @@
 **Backend:** Node.js + Express + sql.js (SQLite) + ScraperAPI
 **Handler:** `src/handlers/checkerAPI.js`, reuses `src/utils/linkChecker.js`
 
+**Supported URL types:** Claude.ai gift/redeem, LinkedIn Premium redeem/coupon, Generic URLs
+
 ---
 
 ## 1. Database Schema
@@ -22,6 +24,19 @@ CREATE TABLE IF NOT EXISTS link_cache (
 ```
 
 > ⚠️ Cache **chia sẻ** giữa admin link checker và public checker webapp. Cùng URL → dùng chung kết quả.
+
+### Bảng `checker_quota` (IP-based rate limiting)
+
+```sql
+CREATE TABLE IF NOT EXISTS checker_quota (
+    ip TEXT NOT NULL,
+    date TEXT NOT NULL,
+    count INTEGER DEFAULT 0,
+    PRIMARY KEY (ip, date)
+);
+```
+
+> 🔒 Quota tính theo IP + ngày. Config: `checker_daily_quota` (default 20), `checker_max_batch` (default 10).
 
 ---
 
@@ -52,9 +67,30 @@ CREATE TABLE IF NOT EXISTS link_cache (
 
 | HTTP | Code | Message |
 |------|------|---------|
-| 400 | `INVALID_REQUEST` | "Vui lòng cung cấp danh sách URL" |
+| 400 | `VALIDATION_ERROR` | "Vui lòng nhập ít nhất 1 URL" |
+| 400 | `VALIDATION_ERROR` | "Không tìm thấy URL hợp lệ" |
 | 403 | `CHECKER_DISABLED` | "Link Checker hiện đang tạm dừng" |
 | 429 | `QUOTA_EXCEEDED` | "Bạn đã hết X lượt check hôm nay" |
+| 500 | `INTERNAL_ERROR` | "Lỗi hệ thống" |
+
+> ⚠️ Quota đếm tất cả links được process (kể cả cache hits), không chỉ API calls.
+
+### GET `/api/checker/quota` — Check remaining quota (public, no auth)
+
+**Response 200:**
+
+```json
+{
+    "enabled": true,
+    "quota": { "daily": 20, "used": 5, "remaining": 15 }
+}
+```
+
+**Response (disabled):**
+
+```json
+{ "enabled": false, "quota": { "daily": 0, "used": 0, "remaining": 0 } }
+```
 
 ---
 
@@ -77,13 +113,52 @@ if (uncachedUrls.length > 0) {
 }
 ```
 
-### ScraperAPI Tiered Check (reuse `linkChecker.js`)
+### URL Routing (`checkLink`)
 
-| Tier | Method | Cost | Dùng khi |
-|------|--------|------|---------|
-| 1 | Direct fetch | Free | Simple URL pattern check |
-| 2 | ScraperAPI basic | 1 credit | Need JS rendering |
-| 3 | ScraperAPI premium | 10 credits | Anti-bot protection |
+```javascript
+// Route URL to appropriate checker
+if (extractClaudeCode(url))      → checkClaudeGift(url, code)
+else if (isLinkedInRedeemUrl(url)) → checkLinkedInRedeem(url)
+else                               → checkGenericUrl(url)
+```
+
+### Claude.ai Check (4-strategy cascade)
+
+| Strategy | Method | Khi nào |
+|----------|--------|---------|
+| 1 | Claude API endpoint (`/api/gift/{code}`) | Thử trước, free |
+| 2 | Redirect analysis (no-follow) | Check login/dashboard redirect |
+| 3 | Full fetch + content analysis | Keyword matching |
+| 4 | ScraperAPI (tiered) | Bypass Cloudflare |
+
+### LinkedIn Premium Check (2-strategy)
+
+| Strategy | Method | Khi nào |
+|----------|--------|---------|
+| 1 | Redirect analysis | LinkedIn luôn redirect → /uas/login |
+| 2 | ScraperAPI render (3 tiers) | Render page + keyword analysis |
+
+> ⚠️ LinkedIn chặn scraper rất aggressive. Kết quả thường là `unknown` + hướng dẫn mở link thủ công.
+
+### ScraperAPI Tiered Check
+
+**Generic URLs:**
+
+| Tier | Params | Credits | Timeout |
+|------|--------|---------|---------|
+| 1 - Basic | (none) | 1 | 15s |
+| 2 - Render | `render=true` | 10 | 30s |
+| 3 - Render+Geo | `render=true&country_code=us` | 20 | 35s |
+
+> 💡 Known SPAs (claude.ai, linkedin.com) skip Basic tier để tiết kiệm credits.
+
+**LinkedIn URLs (dedicated tiers):**
+
+| Tier | Params | Credits | Timeout |
+|------|--------|---------|---------|
+| 1 - Render | `render=true` | 10 | 30s |
+| 2 - Render+Geo | `render=true&country_code=us` | 20 | 35s |
+| 3 - Premium | `render=true&premium=true` | 25 | 40s |
 
 ### Link Status Mapping
 
@@ -94,6 +169,7 @@ if (uncachedUrls.length > 0) {
 | `expired` | Hết hạn | Link quá 30 ngày |
 | `dead` | 404 / không tồn tại | URL sai format |
 | `unknown` | Không xác định | Timeout, CAPTCHA |
+| `cf_blocked` | Cloudflare chặn | Bị challenge page, UI hiển như `unknown` |
 
 ---
 
@@ -127,7 +203,12 @@ if (uncachedUrls.length > 0) {
 
 | Data | Storage | TTL |
 |------|---------|-----|
-| Link results | SQLite `link_cache` | live: 15min, redeemed/dead: ∞, unknown: 5min |
+| `redeemed` | SQLite `link_cache` | ∞ (permanent — won't un-redeem) |
+| `dead` | SQLite `link_cache` | 24 hours |
+| `expired` | SQLite `link_cache` | 24 hours |
+| `live` | SQLite `link_cache` | 15 minutes |
+| `unknown` | SQLite `link_cache` | 5 minutes |
+| `error` / `cf_blocked` | **Not cached** | — |
 | ScraperAPI response | Not cached separately | Processed → link_cache |
 
 ---
