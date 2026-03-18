@@ -6,7 +6,9 @@
     "scripts": {
         "start": "node src/bot.js",
         "dev": "NODE_ENV=development node --watch src/bot.js",
-        "seed": "node src/seed.js"
+        "seed": "node src/seed.js",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
         "sql.js": "^1.10.0",
@@ -16,5 +18,8 @@
     },
     "engines": {
         "node": ">=18.0.0"
+    },
+    "devDependencies": {
+        "vitest": "^3.0.0"
     }
 }

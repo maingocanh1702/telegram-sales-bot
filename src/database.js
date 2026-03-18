@@ -885,71 +885,66 @@ function createManualOrder(data) {
     // Use first catalog item as the order-level product (Phase 1 compat — single product_id)
     const firstCatalog = validatedItems.find(i => i.type === 'catalog');
 
-    db.run('BEGIN TRANSACTION');
-    try {
-        db.run(
-            `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount,
-             status, customer_email, payment_code, source, source_channel, customer_name, customer_phone, customer_contact_id,
-             include_in_analytics, created_by, note, discount_code, discount_amount, payment_method, paid_at, delivered_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                orderCode,
-                0, // telegram_user_id — manual orders don't have a TG user
-                customer.contactId || null,
-                firstCatalog ? firstCatalog.productId : null,
-                validatedItems.map(i => i.productName).join(', '),
-                validatedItems.reduce((sum, i) => sum + i.quantity, 0),
-                firstCatalog ? firstCatalog.unitPrice : validatedItems[0].unitPrice,
-                totalAmount,
-                status,
-                customer.email || null,
-                orderCode,
-                sourceChannel,
-                customer.name || null,
-                customer.phone || null,
-                customer.contactId || null,
-                includeInAnalytics ? 1 : 0,
-                createdBy || null,
-                note || null,
-                discountCode || null,
-                discountAmount || 0,
-                paymentMethod || 'other',
-                ['paid', 'delivered'].includes(status) ? now : null,
-                status === 'delivered' ? now : null,
-            ]
-        );
+    // sql.js auto-commits each db.run() — no explicit transaction needed
+    // (markCredentialsSold → saveDatabase → db.export conflicts with explicit BEGIN/COMMIT)
+    db.run(
+        `INSERT INTO orders (order_code, telegram_user_id, telegram_username, product_id, product_name, quantity, unit_price, total_amount,
+         status, customer_email, payment_code, source, source_channel, customer_name, customer_phone, customer_contact_id,
+         include_in_analytics, created_by, note, discount_code, discount_amount, payment_method, paid_at, delivered_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            orderCode,
+            0, // telegram_user_id — manual orders don't have a TG user
+            customer.contactId || null,
+            firstCatalog ? firstCatalog.productId : 0, // 0 = freeform-only (NOT NULL constraint)
+            validatedItems.map(i => i.productName).join(', '),
+            validatedItems.reduce((sum, i) => sum + i.quantity, 0),
+            firstCatalog ? firstCatalog.unitPrice : validatedItems[0].unitPrice,
+            totalAmount,
+            status,
+            customer.email || null,
+            orderCode,
+            sourceChannel,
+            customer.name || null,
+            customer.phone || null,
+            customer.contactId || null,
+            includeInAnalytics ? 1 : 0,
+            createdBy || null,
+            note || null,
+            discountCode || null,
+            discountAmount || 0,
+            paymentMethod || 'other',
+            ['paid', 'delivered'].includes(status) ? now : null,
+            status === 'delivered' ? now : null,
+        ]
+    );
 
-        // Handle credential assignment for delivered catalog items
-        if (['paid', 'delivered'].includes(status)) {
-            for (const item of validatedItems) {
-                if (item.type === 'catalog' && item.productType === 'credential') {
-                    const creds = getAvailableCredentials(item.productId, item.quantity);
-                    if (creds.length >= item.quantity) {
-                        const credIds = creds.slice(0, item.quantity).map(c => c.id);
-                        // Get order ID from last insert
-                        const oid = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
-                        markCredentialsSold(credIds, oid);
-                    }
+    // Handle credential assignment for delivered catalog items
+    if (['paid', 'delivered'].includes(status)) {
+        for (const item of validatedItems) {
+            if (item.type === 'catalog' && item.productType === 'credential') {
+                const creds = getAvailableCredentials(item.productId, item.quantity);
+                if (creds.length >= item.quantity) {
+                    const credIds = creds.slice(0, item.quantity).map(c => c.id);
+                    // Get order ID from last insert
+                    const oid = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+                    markCredentialsSold(credIds, oid);
                 }
             }
         }
-
-        db.run('COMMIT');
-        saveDatabase();
-
-        return {
-            orderCode,
-            source: 'manual',
-            sourceChannel,
-            status,
-            totalAmount,
-            itemCount: validatedItems.length,
-            items: validatedItems,
-        };
-    } catch (err) {
-        db.run('ROLLBACK');
-        throw err;
     }
+
+    saveDatabase();
+
+    return {
+        orderCode,
+        source: 'manual',
+        sourceChannel,
+        status,
+        totalAmount,
+        itemCount: validatedItems.length,
+        items: validatedItems,
+    };
 }
 
 function updateManualOrder(orderCode, updates) {
