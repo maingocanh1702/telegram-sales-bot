@@ -247,17 +247,17 @@ async function showAvailableDiscounts(bot, chatId, userId) {
         const inFlow = waitingForDiscount.has(userId);
         let text = '🎟 **MÃ GIẢM GIÁ**\n\n' +
             '😔 Hiện tại chưa có mã giảm giá nào dành cho bạn.\n' +
-            'Hãy theo dõi để nhận ưu đãi nhé!\n';
+            'Hãy theo dõi để nhận ưu đãi nhé!';
+
+        const opts = { parse_mode: 'Markdown' };
         if (inFlow) {
-            text += '\n👉 ' + (lang === 'en'
-                ? '_Press "Skip ▶" above to proceed to payment._'
-                : '_Bấm "Bỏ qua ▶" ở trên để thanh toán luôn._');
-        } else {
-            text += '\n🛍 ' + (lang === 'en'
-                ? '_Browse products: /products_'
-                : '_Xem sản phẩm: /products_');
+            opts.reply_markup = {
+                inline_keyboard: [[
+                    { text: lang === 'en' ? '⏭ Skip → Payment' : '⏭ Bỏ qua → Thanh toán', callback_data: CALLBACKS.DISCOUNT_SKIP }
+                ]]
+            };
         }
-        bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, text, opts);
         return;
     }
 
