@@ -81,6 +81,53 @@ function setupMenuHandler(bot) {
         showLanguageSelection(bot, msg.chat.id, null, msg.from.id);
     });
 
+    // /paymentmethod command — change default payment method
+    bot.onText(/\/paymentmethod/, (msg) => {
+        const userId = msg.from.id;
+        const lang = getLang(userId, db.getUserLanguage);
+        const methods = db.getEnabledPaymentMethods();
+        const current = db.getPreferredPaymentMethod(userId);
+
+        const methodNames = { vietqr: 'VietQR (VND)', usdt: 'USDT (Crypto)', paypal: 'PayPal (USD)' };
+        const currentLabel = current ? methodNames[current] : (lang === 'en' ? 'Not set' : 'Chưa chọn');
+        const text = lang === 'en'
+            ? `💳 *Default payment method:* ${currentLabel}\n\nSelect a new default:`
+            : `💳 *Phương thức thanh toán mặc định:* ${currentLabel}\n\nChọn phương thức mới:`;
+
+        const keyboard = [];
+        for (const method of methods) {
+            const isActive = (method.id === current);
+            const check = isActive ? '✅ ' : '';
+            const name = methodNames[method.id] || method.id;
+            keyboard.push([{ text: `${check}${name}`, callback_data: `set_payment_${method.id}` }]);
+        }
+        keyboard.push([{ text: t('btn_main_menu', lang), callback_data: CALLBACKS.MENU_MAIN }]);
+
+        bot.sendMessage(msg.chat.id, text, {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard },
+        });
+
+        // Listen for selection
+        const handler = (query) => {
+            if (query.from.id !== userId) return;
+            if (!query.data.startsWith('set_payment_')) return;
+
+            bot.removeListener('callback_query', handler);
+            bot.answerCallbackQuery(query.id);
+
+            const newMethod = query.data.replace('set_payment_', '');
+            db.setPreferredPaymentMethod(userId, newMethod);
+
+            const confirmMsg = lang === 'en'
+                ? `✅ Default payment method changed to *${methodNames[newMethod]}*`
+                : `✅ Đã đổi phương thức thanh toán mặc định sang *${methodNames[newMethod]}*`;
+            bot.sendMessage(msg.chat.id, confirmMsg, { parse_mode: 'Markdown' });
+        };
+        bot.on('callback_query', handler);
+        setTimeout(() => bot.removeListener('callback_query', handler), 300000);
+    });
+
     // /cart command
     bot.onText(/\/cart/, (msg) => {
         const { showCart } = require('./cartHandler');

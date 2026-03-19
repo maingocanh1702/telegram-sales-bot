@@ -77,7 +77,13 @@ function showPaymentMethodSelection(bot, orderData) {
     const methods = db.getEnabledPaymentMethods();
 
     const totalAmount = orderData.totalAmount || orderData.quantity * (orderData.unitPrice || 0);
+    const preferredMethod = db.getPreferredPaymentMethod(userId);
+
     let text = t('payment_select', lang, { total: formatPrice(totalAmount) });
+    if (preferredMethod) {
+        const methodLabels = { vietqr: 'VietQR (VND)', usdt: 'USDT', paypal: 'PayPal (USD)' };
+        text += `\n\n⭐ ${lang === 'en' ? 'Default' : 'Mặc định'}: ${methodLabels[preferredMethod] || preferredMethod}`;
+    }
 
     // Get exchange rates for price conversion on buttons
     const usdRate = db.getExchangeRate('USD') || 25500;
@@ -87,18 +93,20 @@ function showPaymentMethodSelection(bot, orderData) {
     for (const method of methods) {
         let callbackData;
         let label;
+        const isDefault = (method.id === preferredMethod);
+        const star = isDefault ? '⭐ ' : '';
         if (method.id === 'vietqr') {
             callbackData = CALLBACKS.PAY_VIETQR;
             const vndFormatted = Math.round(totalAmount).toLocaleString('vi-VN');
-            label = `🏦 VND — ${vndFormatted} đ`;
+            label = `${star}🏦 VND — ${vndFormatted} đ`;
         } else if (method.id === 'usdt') {
             callbackData = CALLBACKS.PAY_USDT;
             const usdtAmount = (totalAmount / usdRate).toFixed(2);
-            label = `💰 USDT — ${usdtAmount} USDT`;
+            label = `${star}💰 USDT — ${usdtAmount} USDT`;
         } else if (method.id === 'paypal') {
             callbackData = CALLBACKS.PAY_PAYPAL;
             const usdAmount = (totalAmount / usdRate).toFixed(2);
-            label = `💳 USD — $${usdAmount} (PayPal)`;
+            label = `${star}💳 USD — $${usdAmount} (PayPal)`;
         }
         keyboard.push([{ text: label, callback_data: callbackData }]);
     }
@@ -115,25 +123,32 @@ function showPaymentMethodSelection(bot, orderData) {
         if (query.from.id !== userId) return;
         const data = query.data;
 
-        if (data === CALLBACKS.PAY_VIETQR) {
+        let selectedMethod = null;
+        if (data === CALLBACKS.PAY_VIETQR) selectedMethod = 'vietqr';
+        else if (data === CALLBACKS.PAY_USDT) selectedMethod = 'usdt';
+        else if (data === CALLBACKS.PAY_PAYPAL) selectedMethod = 'paypal';
+
+        if (selectedMethod) {
             bot.removeListener('callback_query', handler);
             bot.answerCallbackQuery(query.id);
-            // Payment→currency auto-switch
-            handlePaymentCurrencySwitch(userId, 'vietqr');
-            orderData.paymentMethod = 'vietqr';
-            createOrder(bot, orderData);
-        } else if (data === CALLBACKS.PAY_USDT) {
-            bot.removeListener('callback_query', handler);
-            bot.answerCallbackQuery(query.id);
-            handlePaymentCurrencySwitch(userId, 'usdt');
-            orderData.paymentMethod = 'usdt';
-            createOrderUsdt(bot, orderData);
-        } else if (data === CALLBACKS.PAY_PAYPAL) {
-            bot.removeListener('callback_query', handler);
-            bot.answerCallbackQuery(query.id);
-            handlePaymentCurrencySwitch(userId, 'paypal');
-            orderData.paymentMethod = 'paypal';
-            createOrderPaypal(bot, orderData);
+            handlePaymentCurrencySwitch(userId, selectedMethod);
+            orderData.paymentMethod = selectedMethod;
+
+            // Save as preferred payment method + notify if first time
+            const isFirstTime = !preferredMethod;
+            db.setPreferredPaymentMethod(userId, selectedMethod);
+
+            if (isFirstTime) {
+                const methodLabels = { vietqr: 'VietQR (VND)', usdt: 'USDT', paypal: 'PayPal (USD)' };
+                const notifyMsg = lang === 'en'
+                    ? `⭐ *${methodLabels[selectedMethod]}* is now your default payment method.\nChange anytime via /paymentmethod`
+                    : `⭐ *${methodLabels[selectedMethod]}* đã được lưu làm phương thức thanh toán mặc định.\nThay đổi bất kỳ lúc nào qua /paymentmethod`;
+                bot.sendMessage(chatId, notifyMsg, { parse_mode: 'Markdown' });
+            }
+
+            if (selectedMethod === 'vietqr') createOrder(bot, orderData);
+            else if (selectedMethod === 'usdt') createOrderUsdt(bot, orderData);
+            else if (selectedMethod === 'paypal') createOrderPaypal(bot, orderData);
         }
     };
     bot.on('callback_query', handler);

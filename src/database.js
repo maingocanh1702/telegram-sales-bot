@@ -289,6 +289,8 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN payment_currency TEXT DEFAULT 'VND'`,
         `ALTER TABLE orders ADD COLUMN payment_amount_foreign REAL`,
         `ALTER TABLE orders ADD COLUMN exchange_rate_used REAL`,
+        // Preferred payment method
+        `ALTER TABLE user_preferences ADD COLUMN preferred_payment_method TEXT`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -1464,6 +1466,9 @@ module.exports = {
     // Language preferences
     getUserLanguage,
     setUserLanguage,
+    // Preferred payment method
+    getPreferredPaymentMethod,
+    setPreferredPaymentMethod,
     // Cart
     addToCart,
     getCart,
@@ -1924,6 +1929,29 @@ function setUserLanguage(userId, lang) {
          VALUES (?, ?, datetime('now'))
          ON CONFLICT(telegram_user_id) DO UPDATE SET language = ?, updated_at = datetime('now')`,
         [userId, lang, lang]
+    );
+    saveDatabase();
+}
+
+function getPreferredPaymentMethod(userId) {
+    try {
+        const result = db.exec(
+            'SELECT preferred_payment_method FROM user_preferences WHERE telegram_user_id = ?',
+            [userId]
+        );
+        if (result.length > 0 && result[0].values.length > 0) {
+            return result[0].values[0][0] || null;
+        }
+    } catch (e) { /* ignore */ }
+    return null;
+}
+
+function setPreferredPaymentMethod(userId, method) {
+    db.run(
+        `INSERT INTO user_preferences (telegram_user_id, preferred_payment_method, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(telegram_user_id) DO UPDATE SET preferred_payment_method = ?, updated_at = datetime('now')`,
+        [userId, method, method]
     );
     saveDatabase();
 }
