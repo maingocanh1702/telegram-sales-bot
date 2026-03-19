@@ -4,6 +4,7 @@ const { generateQRUrl } = require('../utils/vietqr');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
 const { t, getLang } = require('../locales');
+const { handlePaymentCurrencySwitch, formatCurrencyPrice } = require('./currencyHandler');
 
 /**
  * Handle order creation, cancellation, and history
@@ -110,16 +111,20 @@ function showPaymentMethodSelection(bot, orderData) {
         if (data === CALLBACKS.PAY_VIETQR) {
             bot.removeListener('callback_query', handler);
             bot.answerCallbackQuery(query.id);
+            // Payment→currency auto-switch
+            handlePaymentCurrencySwitch(userId, 'vietqr');
             orderData.paymentMethod = 'vietqr';
             createOrder(bot, orderData);
         } else if (data === CALLBACKS.PAY_USDT) {
             bot.removeListener('callback_query', handler);
             bot.answerCallbackQuery(query.id);
+            handlePaymentCurrencySwitch(userId, 'usdt');
             orderData.paymentMethod = 'usdt';
             createOrderUsdt(bot, orderData);
         } else if (data === CALLBACKS.PAY_PAYPAL) {
             bot.removeListener('callback_query', handler);
             bot.answerCallbackQuery(query.id);
+            handlePaymentCurrencySwitch(userId, 'paypal');
             orderData.paymentMethod = 'paypal';
             createOrderPaypal(bot, orderData);
         }
@@ -385,8 +390,8 @@ async function createOrderUsdt(bot, data) {
         db.clearCart(userId);
 
         const usdtWallet = db.getSetting('usdt_wallet') || 'TXyz...abc123';
-        // Simple exchange rate (configurable)
-        const usdtRate = parseFloat(db.getSetting('usdt_rate') || '25000');
+        // Use new exchange rate system
+        const usdtRate = db.getExchangeRate('USD');
         const usdtAmount = (totalAmount / usdtRate).toFixed(2);
 
         let text = t('usdt_title', lang) + '\n';
@@ -450,7 +455,7 @@ async function createOrderPaypal(bot, data) {
         db.clearCart(userId);
 
         const paypalEmail = db.getSetting('paypal_email') || '';
-        const usdRate = parseFloat(db.getSetting('usd_rate') || '25000');
+        const usdRate = db.getExchangeRate('USD');
         const usdAmount = (totalAmount / usdRate).toFixed(2);
         const paypalUrl = `https://paypal.me/${paypalEmail}/${usdAmount}USD`;
 

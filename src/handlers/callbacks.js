@@ -50,6 +50,10 @@ const CALLBACKS = {
     PAY_USDT: 'pay_usdt',
     PAY_PAYPAL: 'pay_paypal',
 
+    // Currency (F-11)
+    CURRENCY_PREFIX: 'currency_',
+    MENU_CURRENCY: 'menu_currency',
+
     // Misc
     NOOP: 'noop',
 };
