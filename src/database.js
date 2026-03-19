@@ -256,6 +256,7 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN note TEXT`,
         `ALTER TABLE orders ADD COLUMN is_deleted INTEGER DEFAULT 0`,
         `ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'vietqr'`,
+        `ALTER TABLE products ADD COLUMN is_hidden INTEGER DEFAULT 0`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -377,7 +378,7 @@ function getProducts() {
            (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE CAST(p.is_active AS INTEGER) = 1
+    WHERE CAST(p.is_active AS INTEGER) = 1 AND COALESCE(p.is_hidden, 0) = 0
     ORDER BY p.sort_order ASC, p.name ASC
   `);
     const results = [];
@@ -411,7 +412,7 @@ function getFeaturedProducts() {
            (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE CAST(p.is_active AS INTEGER) = 1 AND CAST(p.is_featured AS INTEGER) = 1
+    WHERE CAST(p.is_active AS INTEGER) = 1 AND CAST(p.is_featured AS INTEGER) = 1 AND COALESCE(p.is_hidden, 0) = 0
     ORDER BY p.sort_order ASC, p.name ASC
   `);
     const results = [];
@@ -437,7 +438,7 @@ function getProductsByCategory(categoryId) {
            (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE CAST(p.is_active AS INTEGER) = 1 AND p.category_id = ?
+    WHERE CAST(p.is_active AS INTEGER) = 1 AND COALESCE(p.is_hidden, 0) = 0 AND p.category_id = ?
     ORDER BY p.sort_order ASC, p.name ASC
   `);
     stmt.bind([categoryId]);
@@ -730,7 +731,7 @@ function getRecentOrders(limit = 20, filters = {}) {
 
 function getAllProductsStock() {
     const stmt = db.prepare(`
-    SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active,
+    SELECT p.id, p.name, p.price, p.description, p.note, p.credential_fields, p.is_active, p.is_hidden,
            p.product_type, p.invite_slots, p.delivery_hours, p.subscription_days, p.customer_fields,
            p.preorder_stock, p.cost_price, p.seller_name, p.seller_telegram, p.seller_phone, p.seller_email, p.seller_note,
            CASE p.product_type
