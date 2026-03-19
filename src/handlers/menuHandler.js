@@ -49,29 +49,30 @@ function setupMenuHandler(bot) {
             } catch (e) { /* ignore */ }
         }
 
-        // First-time user → show language prompt (per feature doc)
+        // Load or auto-detect language (same pattern as currency)
         if (!hasLangPreference(userId)) {
             const dbLang = db.getUserLanguage(userId);
-            // Check if user has a saved record in DB
+            // Check if user has explicitly saved a preference in DB
             let hasDbRecord = false;
             try {
                 const result = db.getDb().exec(
-                    'SELECT language FROM user_preferences WHERE telegram_user_id = ?',
+                    'SELECT id FROM user_preferences WHERE telegram_user_id = ?',
                     [userId]
                 );
-                if (result.length > 0 && result[0].values.length > 0) {
-                    hasDbRecord = true;
-                }
+                hasDbRecord = result.length > 0 && result[0].values.length > 0;
             } catch (e) { /* ignore */ }
 
             if (hasDbRecord && dbLang) {
-                // Returning user → load saved language, show menu directly
+                // Returning user → load saved language
                 setLang(userId, dbLang);
-                sendMainMenu(bot, msg.chat.id, null, userId);
             } else {
-                // New user → show bilingual language prompt
-                showLanguagePrompt(bot, msg.chat.id);
+                // New user → auto-detect from Telegram language_code
+                const tgLang = (languageCode || '').toLowerCase().split('-')[0];
+                const detectedLang = (tgLang === 'vi') ? 'vi' : 'en';
+                setLang(userId, detectedLang);
+                db.setUserLanguage(userId, detectedLang);
             }
+            sendMainMenu(bot, msg.chat.id, null, userId);
         } else {
             sendMainMenu(bot, msg.chat.id, null, userId);
         }
