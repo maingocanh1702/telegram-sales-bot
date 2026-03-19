@@ -122,7 +122,7 @@ module.exports = {
   order_bank_owner: '• Chủ TK: **{name}**',
   order_bank_content: '• Nội dung CK: **{code}**',
   order_scan_qr: '👇 Quét mã QR bên dưới để thanh toán:',
-  order_auto_confirm: '✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản.\n\n🕐 Sau khi chuyển khoản thành công, bot sẽ tự động xác nhận và gửi tài khoản.',
+  order_auto_confirm: '✅ Sau khi chuyển khoản thành công, bot sẽ tự động xác nhận và gửi tài khoản.',
   btn_cancel_order: '❌ Hủy đơn',
   order_not_found: '❌ Không tìm thấy đơn hàng.',
   order_product_not_found: '❌ Sản phẩm không tồn tại.',
