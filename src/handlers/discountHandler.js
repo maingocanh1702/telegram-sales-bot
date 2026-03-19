@@ -150,13 +150,24 @@ function promptDiscount(bot, data) {
 
     const lang = getLang(userId, db.getUserLanguage);
 
-    // Check if new user has available new-user discount
-    let newUserHint = '';
-    if (db.isNewUser(userId)) {
-        const activeCodes = db.getActiveDiscountCodes();
+    // Check if user has any available discount codes they can use
+    let discountHint = '';
+    const activeCodes = db.getActiveDiscountCodes();
+    const eligibleCodes = activeCodes.filter(c => {
+        if (c.allowed_user_id && String(c.allowed_user_id) !== String(userId)) return false;
+        if (c.is_new_user_only && !db.isNewUser(userId)) return false;
+        if (c.product_id && c.product_id !== data.productId) return false;
+        return true;
+    });
+
+    if (eligibleCodes.length > 0) {
+        discountHint = lang === 'en'
+            ? '\n\n🎁 _You have discount codes available! Type /discount to view._'
+            : '\n\n🎁 _Bạn có mã giảm giá có thể dùng! Gõ /discount để xem mã._';
+    } else if (db.isNewUser(userId)) {
         const hasNewUserCode = activeCodes.some(c => c.is_new_user_only);
         if (hasNewUserCode) {
-            newUserHint = t('discount_new_user_hint', lang);
+            discountHint = t('discount_new_user_hint', lang);
         }
     }
 
@@ -166,7 +177,7 @@ function promptDiscount(bot, data) {
             qty: data.quantity,
             amount: formatPrice(orderAmount),
         }) +
-        newUserHint + '\n' +
+        discountHint + '\n' +
         t('discount_prompt_hint', lang);
 
     bot.sendMessage(chatId, text, {
@@ -309,10 +320,26 @@ async function showAvailableDiscounts(bot, chatId, userId) {
         text += '\n';
     }
 
-    text += '💡 _Nhập mã khi thanh toán để được giảm giá!_\n';
-    text += '🛒 Dùng mã ngay: /products';
-
-    bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    const inFlow = waitingForDiscount.has(userId);
+    const lang = getLang(userId, db.getUserLanguage);
+    if (inFlow) {
+        text += '👆 ' + (lang === 'en'
+            ? '_Enter the code above to apply your discount!_'
+            : '_Nhập mã ở bước trên để áp dụng giảm giá!_');
+        bot.sendMessage(chatId, text, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: lang === 'en' ? '🎟 Enter code' : '🎟 Nhập mã giảm giá', callback_data: CALLBACKS.DISCOUNT_ENTER },
+                    { text: lang === 'en' ? '⏭ Skip' : '⏭ Bỏ qua', callback_data: CALLBACKS.DISCOUNT_SKIP },
+                ]]
+            }
+        });
+    } else {
+        text += '💡 _Nhập mã khi thanh toán để được giảm giá!_\n';
+        text += '🛒 Dùng mã ngay: /products';
+        bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    }
 }
 
 /**
