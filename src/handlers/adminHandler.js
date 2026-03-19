@@ -71,6 +71,7 @@ function setupAdminHandler(bot) {
             '`/stock` — Xem tồn kho\n' +
             '`/orders` — Đơn hàng gần đây\n' +
             '`/myorders` — Đơn hàng bạn đã mua\n' +
+            '`/setprice <tên SP hoặc ID> | <giá mới>` — Đổi giá\n' +
             '`/confirm order_code` — Xác nhận thủ công\n' +
             '`/deleteproduct <tên SP hoặc ID>` — Xóa sản phẩm\n\n' +
             '💡 _Có thể dùng tên SP thay cho ID:_\n' +
@@ -302,6 +303,43 @@ function setupAdminHandler(bot) {
         await deliverCredentials(bot, order);
 
         bot.sendMessage(msg.chat.id, `📬 Đã gửi sản phẩm cho @${order.telegram_username || order.telegram_user_id}`);
+    });
+
+    // /setprice <product name or ID> | <new price>
+    bot.onText(/\/setprice (.+)/, (msg, match) => {
+        if (!isAdmin(msg.from.id)) return;
+
+        const parts = match[1].split('|').map(s => s.trim());
+        if (parts.length < 2) {
+            bot.sendMessage(msg.chat.id, '❌ Cú pháp: `/setprice <tên SP hoặc ID> | <giá mới>`\nVD: `/setprice claude pro | 350000`', { parse_mode: 'Markdown' });
+            return;
+        }
+
+        const result = findProduct(parts[0]);
+        if (!result) {
+            bot.sendMessage(msg.chat.id, `❌ Không tìm thấy sản phẩm: "${parts[0]}"\nGõ /stock để xem danh sách.`);
+            return;
+        }
+        if (result.multiple) {
+            bot.sendMessage(msg.chat.id, formatMultipleMatches(result.multiple));
+            return;
+        }
+        const product = result;
+        const newPrice = parseInt(parts[1].replace(/[^0-9]/g, ''));
+
+        if (isNaN(newPrice) || newPrice <= 0) {
+            bot.sendMessage(msg.chat.id, '❌ Giá không hợp lệ. Vui lòng nhập số nguyên dương.');
+            return;
+        }
+
+        const oldPrice = product.price;
+        db.updateProduct(product.id, { price: newPrice });
+
+        bot.sendMessage(msg.chat.id,
+            `✅ Đã cập nhật giá **${product.name}**:\n` +
+            `   💰 ${formatPrice(oldPrice)} → **${formatPrice(newPrice)}**`,
+            { parse_mode: 'Markdown' }
+        );
     });
 
     // /deleteproduct <product name or ID>
