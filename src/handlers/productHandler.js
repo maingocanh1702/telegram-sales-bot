@@ -80,13 +80,20 @@ function setupProductHandler(bot) {
 /**
  * Show main product list: featured products + category buttons
  */
+function escapeMd(text) {
+    if (!text) return '';
+    return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
+}
+
 function showProductList(bot, chatId, messageId = null, userId = null) {
+  try {
     const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
     const userCurrency = userId ? db.getUserCurrency(userId) : 'VND';
     console.log(`[DEBUG showProductList] userId=${userId}, lang=${lang}, currency=${userCurrency}`);
     const featured = db.getFeaturedProducts();
     const categories = db.getCategories();
     const allProducts = userId ? db.getVisibleProducts(userCurrency) : db.getProducts();
+    console.log(`[DEBUG showProductList] featured=${featured.length}, categories=${categories.length}, products=${allProducts.length}`);
 
     if (allProducts.length === 0) {
         const text = t('product_list_empty', lang);
@@ -99,9 +106,13 @@ function showProductList(bot, chatId, messageId = null, userId = null) {
         };
 
         if (messageId) {
-            bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(ignoreNotModified);
+            bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(err => {
+                console.error('[Product] editMessage (empty) failed:', err.message);
+            });
         } else {
-            bot.sendMessage(chatId, text, options);
+            bot.sendMessage(chatId, text, options).catch(err => {
+                console.error('[Product] sendMessage (empty) failed:', err.message);
+            });
         }
         return;
     }
@@ -190,11 +201,32 @@ function showProductList(bot, chatId, messageId = null, userId = null) {
         reply_markup: { inline_keyboard: keyboard },
     };
 
+    console.log(`[DEBUG showProductList] Sending message, messageId=${messageId}, textLength=${text.length}`);
     if (messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(ignoreNotModified);
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options }).catch(err => {
+            console.error('[Product] editMessage failed:', err.message);
+            // Fallback: try without Markdown parse_mode
+            bot.editMessageText(text, { chat_id: chatId, message_id: messageId, reply_markup: options.reply_markup }).catch(err2 => {
+                console.error('[Product] editMessage fallback also failed:', err2.message);
+            });
+        });
     } else {
-        bot.sendMessage(chatId, text, options);
+        bot.sendMessage(chatId, text, options).catch(err => {
+            console.error('[Product] sendMessage failed:', err.message);
+        });
     }
+  } catch (err) {
+    console.error('[Product] showProductList CRASH:', err.message, err.stack);
+    // Try to send error feedback to user
+    const errorText = '❌ Có lỗi xảy ra khi tải sản phẩm. Vui lòng thử lại.';
+    if (messageId) {
+        bot.editMessageText(errorText, { chat_id: chatId, message_id: messageId,
+            reply_markup: { inline_keyboard: [[{ text: '🔄 Thử lại', callback_data: CALLBACKS.MENU_PRODUCTS_REFRESH }]] }
+        }).catch(() => {});
+    } else {
+        bot.sendMessage(chatId, errorText).catch(() => {});
+    }
+  }
 }
 
 /**
