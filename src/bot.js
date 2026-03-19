@@ -19,6 +19,7 @@ const { setupHelpHandler, setupGuideCallback } = require('./handlers/helpHandler
 const { setupInviteConfirmHandler } = require('./handlers/deliveryHandler');
 const { setupDiscountHandler } = require('./handlers/discountHandler');
 const { setupCartHandler } = require('./handlers/cartHandler');
+const { setupCurrencyHandler } = require('./handlers/currencyHandler');
 const { startOrderExpiryCheck } = require('./utils/orderExpiry');
 const { startSepayPoller } = require('./utils/sepayPoller');
 const { setupScheduler } = require('./scheduler');
@@ -55,6 +56,7 @@ async function main() {
         { command: 'profile', description: 'Tài khoản / Account' },
         { command: 'discount', description: 'Mã giảm giá / Discount codes' },
         { command: 'language', description: '🌐 Chọn ngôn ngữ / Language' },
+        { command: 'currency', description: '💱 Đổi tiền tệ / Change currency' },
         { command: 'help', description: 'Hỗ trợ / Support' },
         { command: 'huongdan', description: 'Hướng dẫn / Guide' },
     ]).catch((err) => {
@@ -146,6 +148,7 @@ async function main() {
     setupInviteConfirmHandler(bot);
     setupDiscountHandler(bot);
     setupCartHandler(bot);
+    setupCurrencyHandler(bot);
     setupScheduler(bot);
     setupProfileHandler(bot);
     setupHelpHandler(bot);

@@ -3,6 +3,7 @@ const config = require('../config');
 const { formatPrice } = require('./menuHandler');
 const { CALLBACKS } = require('./callbacks');
 const { t, getLang } = require('../locales');
+const { formatProductPrice } = require('./currencyHandler');
 
 /**
  * Handle product listing with categories and featured products
@@ -81,9 +82,11 @@ function setupProductHandler(bot) {
  */
 function showProductList(bot, chatId, messageId = null, userId = null) {
     const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
+    const userCurrency = userId ? db.getUserCurrency(userId) : 'VND';
+    console.log(`[DEBUG showProductList] userId=${userId}, lang=${lang}, currency=${userCurrency}`);
     const featured = db.getFeaturedProducts();
     const categories = db.getCategories();
-    const allProducts = db.getProducts();
+    const allProducts = userId ? db.getVisibleProducts(userCurrency) : db.getProducts();
 
     if (allProducts.length === 0) {
         const text = t('product_list_empty', lang);
@@ -106,13 +109,18 @@ function showProductList(bot, chatId, messageId = null, userId = null) {
     let text = t('product_list_title', lang) + '\n\n';
     const keyboard = [];
 
-    // 🔥 Featured products section
-    if (featured.length > 0) {
+    // 🔥 Featured products section (filter by visibility)
+    const visibleFeatured = featured.filter(p => {
+        if (!p.visible_currencies) return true;
+        return p.visible_currencies.includes(userCurrency);
+    });
+    if (visibleFeatured.length > 0) {
         text += t('product_hot', lang) + '\n\n';
-        for (const p of featured) {
+        for (const p of visibleFeatured) {
             const icon = p.stock > 0 ? '🌟' : '❌';
+            const priceText = formatProductPrice(p, userCurrency);
             keyboard.push([{
-                text: `${icon} ${p.name} — ${formatPrice(p.price)}`,
+                text: `${icon} ${p.name} — ${priceText}`,
                 callback_data: `product_${p.id}_featured`,
             }]);
         }
@@ -154,8 +162,9 @@ function showProductList(bot, chatId, messageId = null, userId = null) {
         }
         for (const p of uncategorized) {
             const icon = p.stock > 0 ? '✅' : '❌';
+            const priceText = formatProductPrice(p, userCurrency);
             keyboard.push([{
-                text: `${icon} ${p.name} — ${formatPrice(p.price)}`,
+                text: `${icon} ${p.name} — ${priceText}`,
                 callback_data: `product_${p.id}`,
             }]);
         }
@@ -193,7 +202,13 @@ function showProductList(bot, chatId, messageId = null, userId = null) {
  */
 async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) {
     const lang = getLang(userId, db.getUserLanguage);
-    const products = db.getProductsByCategory(categoryId);
+    const userCurrency = db.getUserCurrency(userId);
+    const allCatProducts = db.getProductsByCategory(categoryId);
+    // Filter by visibility
+    const products = allCatProducts.filter(p => {
+        if (!p.visible_currencies) return true;
+        return p.visible_currencies.includes(userCurrency);
+    });
     const categories = db.getCategories();
     const category = categories.find(c => c.id === categoryId);
 
@@ -215,7 +230,8 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
 
     for (const p of products) {
         const icon = p.stock > 0 ? '✅' : '❌';
-        text += `${icon} **${p.name}** — ${formatPrice(p.price)}`;
+        const priceText = formatProductPrice(p, userCurrency);
+        text += `${icon} **${p.name}** — ${priceText}`;
         if (p.stock > 0) {
             text += ` _(${t('product_stock', lang, { count: p.stock })})_`;
         } else {
@@ -227,8 +243,9 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
     const keyboard = [];
     for (const p of products) {
         const icon = p.stock > 0 ? '🛒' : '❌';
+        const priceText = formatProductPrice(p, userCurrency);
         keyboard.push([{
-            text: `${icon} ${p.name} — ${formatPrice(p.price)}`,
+            text: `${icon} ${p.name} — ${priceText}`,
             callback_data: `product_${p.id}_cat${categoryId}`,
         }]);
     }
@@ -249,6 +266,7 @@ async function showCategoryProducts(bot, chatId, messageId, categoryId, userId) 
  */
 async function showProductDetail(bot, chatId, messageId, productId, userId = null, backCallback = null) {
     const lang = userId ? getLang(userId, db.getUserLanguage) : 'vi';
+    const userCurrency = userId ? db.getUserCurrency(userId) : 'VND';
     const product = db.getProductById(productId);
 
     if (!product) {
@@ -264,9 +282,11 @@ async function showProductDetail(bot, chatId, messageId, productId, userId = nul
         return;
     }
 
+    const priceText = formatProductPrice(product, userCurrency);
+
     let text = `📦 **${product.name.toUpperCase()}**\n`;
     text += `━━━━━━━━━━━━━━━━━━\n\n`;
-    text += t('product_price', lang, { price: formatPrice(product.price) }) + '\n';
+    text += t('product_price', lang, { price: priceText }) + '\n';
     text += t('product_stock', lang, { count: product.stock }) + '\n';
 
     // SLA display

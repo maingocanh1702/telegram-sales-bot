@@ -653,6 +653,9 @@
         <a onclick="showSection('discounts')">
           <span class="material-symbols-rounded">confirmation_number</span> Mã giảm giá
         </a>
+        <a onclick="showSection('pricing')">
+          <span class="material-symbols-rounded">currency_exchange</span> Giá & Tiền tệ
+        </a>
       </nav>
     </aside>
 
@@ -872,6 +875,43 @@ Số Lượng Đang Hiện Có 10"
           <div id="discountsTable"></div>
         </div>
       </div>
+
+      <!-- Pricing Section (F-11) -->
+      <div class="section" id="sec-pricing">
+        <div class="page-header">
+          <h1>💱 Giá & Tiền tệ</h1>
+          <p>Quản lý tỷ giá, giá sản phẩm theo từng loại tiền tệ, và hiển thị sản phẩm theo quốc gia</p>
+        </div>
+
+        <!-- Exchange Rates Card -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>📊 Tỷ giá quy đổi</h3>
+            <button class="btn btn-sm btn-primary" onclick="saveExchangeRates()">💾 Lưu tỷ giá</button>
+          </div>
+          <p style="color:var(--text-muted);font-size:13px;margin:8px 0 16px">Đơn vị: 1 ngoại tệ = ? VNĐ. Nếu để trống, hệ thống sẽ dùng tỷ giá từ Settings.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label>🇺🇸 1 USD = ? VNĐ</label>
+              <input type="number" id="rateUSD" placeholder="25500" step="100">
+              <p class="hint" id="rateUSDHint"></p>
+            </div>
+            <div class="form-group">
+              <label>🇪🇺 1 EUR = ? VNĐ</label>
+              <input type="number" id="rateEUR" placeholder="27800" step="100">
+              <p class="hint" id="rateEURHint"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Product Pricing Table -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📦 Giá sản phẩm theo tiền tệ</h3>
+          </div>
+          <div id="pricingTable"></div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -965,6 +1005,43 @@ Số Lượng Đang Hiện Có 10"
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('productModal')">Hủy</button>
         <button class="btn btn-primary" onclick="saveProduct()">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pricing Modal (F-11) -->
+  <div class="modal-overlay" id="pricingModal">
+    <div class="modal" style="max-width:560px">
+      <h3 id="pricingModalTitle">💰 Giá sản phẩm</h3>
+      <input type="hidden" id="pricingProductId">
+      <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text-muted)">Giá gốc (VNĐ)</div>
+        <div style="font-size:20px;font-weight:700" id="pricingBasePrice">—</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label>🇺🇸 Giá USD (thủ công)</label>
+          <input type="number" id="priceUSD" step="0.01" placeholder="Auto-convert">
+          <p class="hint" id="priceUSDHint">Để trống = tự quy đổi</p>
+        </div>
+        <div class="form-group">
+          <label>🇪🇺 Giá EUR (thủ công)</label>
+          <input type="number" id="priceEUR" step="0.01" placeholder="Auto-convert">
+          <p class="hint" id="priceEURHint">Để trống = tự quy đổi</p>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>🌍 Hiển thị cho tiền tệ nào?</label>
+        <div style="display:flex;gap:16px;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="visVND" value="VND"> 🇻🇳 VND</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="visUSD" value="USD"> 🇺🇸 USD</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="visEUR" value="EUR"> 🇪🇺 EUR</label>
+        </div>
+        <p class="hint">Bỏ chọn tất cả = hiển thị cho mọi tiền tệ (mặc định)</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('pricingModal')">Hủy</button>
+        <button class="btn btn-primary" onclick="savePricing()">💾 Lưu</button>
       </div>
     </div>
   </div>
@@ -1141,6 +1218,7 @@ Số Lượng Đang Hiện Có 10"
       if (name === 'customers') loadCustomers();
       if (name === 'settings') loadBankAccounts();
       if (name === 'discounts') loadDiscounts();
+      if (name === 'pricing') loadPricing();
     }
 
     // ==================== Dashboard ====================
@@ -1308,6 +1386,7 @@ Số Lượng Đang Hiện Có 10"
             <td>${Number(p.is_hidden) ? '<span class="badge badge-muted">Ẩn</span>' : p.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-muted">Inactive</span>'}</td>
             <td>
               <button class="btn btn-sm btn-ghost" onclick="editProduct(${p.id})">Sửa</button>
+              <button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="openPricingModal(${p.id})" title="Giá & tiền tệ">💱</button>
               <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id})">Xóa</button>
             </td>
           </tr>`;
@@ -2929,6 +3008,129 @@ Số Lượng Đang Hiện Có 10"
         await apiFetch(`/discounts/${id}`, { method: 'DELETE' });
         toast('Đã xóa mã giảm giá');
         loadDiscounts();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ==================== Dynamic Pricing (F-11) ====================
+
+    async function loadPricing() {
+      try {
+        // Load exchange rates
+        const ratesData = await apiFetch('/exchange-rates');
+        const rates = ratesData.rates || {};
+        document.getElementById('rateUSD').value = rates.USD ? rates.USD.rate : '';
+        document.getElementById('rateEUR').value = rates.EUR ? rates.EUR.rate : '';
+        document.getElementById('rateUSDHint').textContent = rates.USD ? `Nguồn: ${rates.USD.source}` : '';
+        document.getElementById('rateEURHint').textContent = rates.EUR ? `Nguồn: ${rates.EUR.source}` : '';
+
+        // Load products with pricing info
+        const products = await apiFetch('/products');
+        if (products.length === 0) {
+          document.getElementById('pricingTable').innerHTML = '<div class="empty-state"><span class="material-symbols-rounded">inventory_2</span><p>Chưa có sản phẩm</p></div>';
+          return;
+        }
+
+        let html = '<table><tr><th>Sản phẩm</th><th>Giá VNĐ</th><th>Giá USD</th><th>Giá EUR</th><th>Hiển thị</th><th></th></tr>';
+        for (const p of products) {
+          let pricesData = null;
+          try { pricesData = await apiFetch(`/products/${p.id}/prices`); } catch { }
+          const usdPrice = pricesData?.prices?.USD;
+          const eurPrice = pricesData?.prices?.EUR;
+          const usdText = usdPrice?.manual
+            ? `<span style="color:var(--success)">$${usdPrice.manual}</span>`
+            : (usdPrice?.autoConvert ? `<span style="color:var(--text-muted)">≈ $${usdPrice.autoConvert}</span>` : '—');
+          const eurText = eurPrice?.manual
+            ? `<span style="color:var(--success)">€${eurPrice.manual}</span>`
+            : (eurPrice?.autoConvert ? `<span style="color:var(--text-muted)">≈ €${eurPrice.autoConvert}</span>` : '—');
+          const vis = pricesData?.visibleCurrencies;
+          const visText = vis ? vis.split(',').map(c => ({VND:'🇻🇳',USD:'🇺🇸',EUR:'🇪🇺'}[c] || c)).join(' ') : '🌍 Tất cả';
+          html += `<tr>
+            <td><strong>${p.name}</strong></td>
+            <td class="money">${formatMoney(p.price)}</td>
+            <td>${usdText}</td>
+            <td>${eurText}</td>
+            <td style="font-size:13px">${visText}</td>
+            <td><button class="btn btn-sm btn-ghost" onclick="openPricingModal(${p.id})">✏️ Sửa giá</button></td>
+          </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('pricingTable').innerHTML = html;
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function saveExchangeRates() {
+      try {
+        const usd = document.getElementById('rateUSD').value;
+        const eur = document.getElementById('rateEUR').value;
+        if (usd) {
+          await apiFetch('/exchange-rates', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currency: 'USD', rate: parseFloat(usd) }),
+          });
+        }
+        if (eur) {
+          await apiFetch('/exchange-rates', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currency: 'EUR', rate: parseFloat(eur) }),
+          });
+        }
+        toast('Đã lưu tỷ giá');
+        loadPricing();
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function openPricingModal(productId) {
+      try {
+        const data = await apiFetch(`/products/${productId}/prices`);
+        document.getElementById('pricingProductId').value = productId;
+        document.getElementById('pricingModalTitle').textContent = '💰 Giá sản phẩm #' + productId;
+        document.getElementById('pricingBasePrice').textContent = formatMoney(data.basePriceVND);
+        document.getElementById('priceUSD').value = data.prices.USD.manual || '';
+        document.getElementById('priceEUR').value = data.prices.EUR.manual || '';
+        document.getElementById('priceUSDHint').textContent = data.prices.USD.autoConvert
+          ? `Auto: $${data.prices.USD.autoConvert}` : 'Để trống = tự quy đổi';
+        document.getElementById('priceEURHint').textContent = data.prices.EUR.autoConvert
+          ? `Auto: €${data.prices.EUR.autoConvert}` : 'Để trống = tự quy đổi';
+
+        // Visibility checkboxes
+        const vis = data.visibleCurrencies ? data.visibleCurrencies.split(',') : [];
+        document.getElementById('visVND').checked = vis.length === 0 || vis.includes('VND');
+        document.getElementById('visUSD').checked = vis.length === 0 || vis.includes('USD');
+        document.getElementById('visEUR').checked = vis.length === 0 || vis.includes('EUR');
+
+        document.getElementById('pricingModal').classList.add('active');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function savePricing() {
+      try {
+        const productId = document.getElementById('pricingProductId').value;
+        const usdVal = document.getElementById('priceUSD').value;
+        const eurVal = document.getElementById('priceEUR').value;
+
+        const prices = {};
+        prices.USD = usdVal ? parseFloat(usdVal) : null;
+        prices.EUR = eurVal ? parseFloat(eurVal) : null;
+
+        // Visibility
+        const visChecked = [];
+        if (document.getElementById('visVND').checked) visChecked.push('VND');
+        if (document.getElementById('visUSD').checked) visChecked.push('USD');
+        if (document.getElementById('visEUR').checked) visChecked.push('EUR');
+        // All checked or none checked = null (visible to all)
+        const visibleCurrencies = (visChecked.length === 3 || visChecked.length === 0) ? null : visChecked;
+
+        await apiFetch(`/products/${productId}/prices`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prices, visibleCurrencies }),
+        });
+
+        toast('Đã lưu giá sản phẩm');
+        closeModal('pricingModal');
+        loadPricing();
       } catch (e) { toast(e.message, 'error'); }
     }
 

@@ -214,6 +214,30 @@ async function initDatabase() {
     )
   `);
 
+    // Product prices (multi-currency manual pricing)
+    db.run(`
+    CREATE TABLE IF NOT EXISTS product_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      price REAL NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      UNIQUE(product_id, currency)
+    )
+  `);
+
+    // Exchange rate cache
+    db.run(`
+    CREATE TABLE IF NOT EXISTS exchange_rate_cache (
+      currency_pair TEXT PRIMARY KEY,
+      rate REAL NOT NULL,
+      source TEXT DEFAULT 'manual',
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
     // ==================== Migrations ====================
     // Add new columns to existing tables (safe to run multiple times)
     const migrations = [
@@ -257,6 +281,14 @@ async function initDatabase() {
         `ALTER TABLE orders ADD COLUMN is_deleted INTEGER DEFAULT 0`,
         `ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'vietqr'`,
         `ALTER TABLE products ADD COLUMN is_hidden INTEGER DEFAULT 0`,
+        // Dynamic Pricing (F-11)
+        `ALTER TABLE user_preferences ADD COLUMN currency TEXT DEFAULT 'VND'`,
+        `ALTER TABLE user_preferences ADD COLUMN detected_language_code TEXT`,
+        `ALTER TABLE products ADD COLUMN visible_currencies TEXT`,
+        `ALTER TABLE orders ADD COLUMN price_source TEXT DEFAULT 'base'`,
+        `ALTER TABLE orders ADD COLUMN payment_currency TEXT DEFAULT 'VND'`,
+        `ALTER TABLE orders ADD COLUMN payment_amount_foreign REAL`,
+        `ALTER TABLE orders ADD COLUMN exchange_rate_used REAL`,
     ];
     for (const sql of migrations) {
         try { db.run(sql); } catch (e) { /* column already exists */ }
@@ -1101,6 +1133,245 @@ function getOrderById(id) {
     return result;
 }
 
+// ==================== Dynamic Pricing (F-11) ====================
+
+const SUPPORTED_CURRENCIES = ['VND', 'USD', 'EUR'];
+
+function getUserCurrency(userId) {
+    try {
+        const result = db.exec(
+            'SELECT currency FROM user_preferences WHERE telegram_user_id = ?',
+            [userId]
+        );
+        if (result.length > 0 && result[0].values.length > 0) {
+            return result[0].values[0][0] || 'VND';
+        }
+    } catch (e) { /* column may not exist yet */ }
+    return 'VND';
+}
+
+function setUserCurrency(userId, currency, detectedLanguageCode = null) {
+    if (!SUPPORTED_CURRENCIES.includes(currency)) {
+        const err = new Error('Currency không hợp lệ. Chỉ hỗ trợ: ' + SUPPORTED_CURRENCIES.join(', '));
+        err.code = 'INVALID_CURRENCY';
+        throw err;
+    }
+    if (detectedLanguageCode) {
+        db.run(
+            `INSERT INTO user_preferences (telegram_user_id, language, currency, detected_language_code, updated_at)
+             VALUES (?, 'vi', ?, ?, datetime('now'))
+             ON CONFLICT(telegram_user_id) DO UPDATE SET currency = ?, detected_language_code = ?, updated_at = datetime('now')`,
+            [userId, currency, detectedLanguageCode, currency, detectedLanguageCode]
+        );
+    } else {
+        db.run(
+            `INSERT INTO user_preferences (telegram_user_id, language, currency, updated_at)
+             VALUES (?, 'vi', ?, datetime('now'))
+             ON CONFLICT(telegram_user_id) DO UPDATE SET currency = ?, updated_at = datetime('now')`,
+            [userId, currency, currency]
+        );
+    }
+    saveDatabase();
+}
+
+function getExchangeRate(currency) {
+    if (currency === 'VND') return 1;
+    try {
+        const result = db.exec(
+            'SELECT rate FROM exchange_rate_cache WHERE currency_pair = ?',
+            [currency + '_VND']
+        );
+        if (result.length > 0 && result[0].values.length > 0) {
+            return result[0].values[0][0];
+        }
+    } catch (e) { /* ignore */ }
+    // Fallback from settings (legacy support)
+    if (currency === 'USD') {
+        return parseFloat(getSetting('usd_rate') || getSetting('usdt_rate') || '25500');
+    }
+    if (currency === 'EUR') {
+        return parseFloat(getSetting('eur_rate') || '27800');
+    }
+    return null;
+}
+
+function getExchangeRates() {
+    const rates = {};
+    try {
+        const stmt = db.prepare('SELECT currency_pair, rate, source, updated_at FROM exchange_rate_cache');
+        while (stmt.step()) {
+            const row = stmt.getAsObject();
+            const currency = row.currency_pair.replace('_VND', '');
+            rates[currency] = { rate: row.rate, source: row.source, updatedAt: row.updated_at };
+        }
+        stmt.free();
+    } catch (e) { /* ignore */ }
+    // Fill missing from settings fallback
+    if (!rates.USD) {
+        const r = parseFloat(getSetting('usd_rate') || getSetting('usdt_rate') || '25500');
+        rates.USD = { rate: r, source: 'settings', updatedAt: null };
+    }
+    if (!rates.EUR) {
+        const r = parseFloat(getSetting('eur_rate') || '27800');
+        rates.EUR = { rate: r, source: 'settings', updatedAt: null };
+    }
+    return rates;
+}
+
+function setExchangeRateManual(currency, rate) {
+    if (!SUPPORTED_CURRENCIES.includes(currency) || currency === 'VND') {
+        const err = new Error('Currency không hợp lệ');
+        err.code = 'INVALID_CURRENCY';
+        throw err;
+    }
+    if (rate === null || rate === undefined) {
+        // Revert to API/settings rate — delete manual entry
+        db.run('DELETE FROM exchange_rate_cache WHERE currency_pair = ? AND source = ?', [currency + '_VND', 'manual']);
+        saveDatabase();
+        return;
+    }
+    if (typeof rate !== 'number' || rate <= 0) {
+        const err = new Error('Tỷ giá phải > 0');
+        err.code = 'INVALID_RATE';
+        throw err;
+    }
+    db.run(
+        `INSERT INTO exchange_rate_cache (currency_pair, rate, source, updated_at)
+         VALUES (?, ?, 'manual', datetime('now'))
+         ON CONFLICT(currency_pair) DO UPDATE SET rate = ?, source = 'manual', updated_at = datetime('now')`,
+        [currency + '_VND', rate, rate]
+    );
+    saveDatabase();
+}
+
+function getProductPrice(productId, currency = 'VND') {
+    const product = getProductById(productId);
+    if (!product) return null;
+
+    if (currency === 'VND') {
+        return { price: product.price, source: 'base', currency: 'VND' };
+    }
+
+    // Check manual price
+    try {
+        const result = db.exec(
+            'SELECT price FROM product_prices WHERE product_id = ? AND currency = ?',
+            [productId, currency]
+        );
+        if (result.length > 0 && result[0].values.length > 0) {
+            return { price: result[0].values[0][0], source: 'manual', currency };
+        }
+    } catch (e) { /* ignore */ }
+
+    // Auto-convert
+    const rate = getExchangeRate(currency);
+    if (!rate) {
+        return { price: product.price, source: 'fallback', currency: 'VND', warning: 'rate_unavailable' };
+    }
+    const convertedPrice = Math.round(product.price / rate * 100) / 100;
+    return { price: convertedPrice, source: 'auto_convert', currency, rate };
+}
+
+function getProductPrices(productId) {
+    const product = getProductById(productId);
+    if (!product) return null;
+
+    const prices = {};
+    const rates = getExchangeRates();
+
+    for (const curr of ['USD', 'EUR']) {
+        let manualPrice = null;
+        try {
+            const result = db.exec(
+                'SELECT price FROM product_prices WHERE product_id = ? AND currency = ?',
+                [productId, curr]
+            );
+            if (result.length > 0 && result[0].values.length > 0) {
+                manualPrice = result[0].values[0][0];
+            }
+        } catch (e) { /* ignore */ }
+
+        const rate = rates[curr] ? rates[curr].rate : null;
+        const autoConvert = rate ? Math.round(product.price / rate * 100) / 100 : null;
+
+        prices[curr] = {
+            manual: manualPrice,
+            autoConvert,
+            rate,
+        };
+    }
+
+    return {
+        productId,
+        basePriceVND: product.price,
+        costPriceVND: product.cost_price || 0,
+        prices,
+        visibleCurrencies: product.visible_currencies || null,
+    };
+}
+
+function upsertProductPrice(productId, currency, price) {
+    if (!SUPPORTED_CURRENCIES.includes(currency) || currency === 'VND') {
+        const err = new Error('Currency không hợp lệ');
+        err.code = 'INVALID_CURRENCY';
+        throw err;
+    }
+    if (typeof price !== 'number' || price <= 0) {
+        const err = new Error('Giá phải > 0');
+        err.code = 'INVALID_PRICE';
+        throw err;
+    }
+    db.run(
+        `INSERT INTO product_prices (product_id, currency, price, updated_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(product_id, currency) DO UPDATE SET price = ?, updated_at = datetime('now')`,
+        [productId, currency, price, price]
+    );
+    saveDatabase();
+}
+
+function deleteProductPrice(productId, currency) {
+    db.run('DELETE FROM product_prices WHERE product_id = ? AND currency = ?', [productId, currency]);
+    saveDatabase();
+}
+
+function setProductVisibility(productId, currencies) {
+    if (currencies === null || currencies === undefined || (Array.isArray(currencies) && currencies.length === 0)) {
+        db.run('UPDATE products SET visible_currencies = NULL WHERE id = ?', [productId]);
+    } else {
+        const arr = Array.isArray(currencies) ? currencies : [currencies];
+        for (const c of arr) {
+            if (!SUPPORTED_CURRENCIES.includes(c)) {
+                const err = new Error('Currency không hợp lệ: ' + c);
+                err.code = 'INVALID_CURRENCY';
+                throw err;
+            }
+        }
+        db.run('UPDATE products SET visible_currencies = ? WHERE id = ?', [arr.join(','), productId]);
+    }
+    saveDatabase();
+}
+
+function getVisibleProducts(userCurrency = 'VND') {
+    const stmt = db.prepare(`
+        SELECT p.*, 
+               (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
+        FROM products p
+        WHERE CAST(p.is_active AS INTEGER) = 1
+          AND COALESCE(p.is_hidden, 0) = 0
+          AND (
+            p.visible_currencies IS NULL
+            OR p.visible_currencies LIKE '%' || ? || '%'
+          )
+        ORDER BY p.sort_order ASC, p.name ASC
+    `);
+    stmt.bind([userCurrency]);
+    const results = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+}
+
 module.exports = {
     initDatabase,
     saveDatabase,
@@ -1196,6 +1467,19 @@ module.exports = {
     updateOrderItemStatus,
     // Payment methods
     getEnabledPaymentMethods,
+    // Dynamic Pricing (F-11)
+    getUserCurrency,
+    setUserCurrency,
+    getExchangeRate,
+    getExchangeRates,
+    setExchangeRateManual,
+    getProductPrice,
+    getProductPrices,
+    upsertProductPrice,
+    deleteProductPrice,
+    setProductVisibility,
+    getVisibleProducts,
+    SUPPORTED_CURRENCIES,
 };
 
 // ==================== Settings ====================

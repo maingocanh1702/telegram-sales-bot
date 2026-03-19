@@ -231,6 +231,99 @@ function setupAdminAPI(app, bot) {
         }
     });
 
+    // ==================== Product Pricing (F-11 Dynamic Pricing) ====================
+
+    // Get all prices + auto-convert for a product
+    app.get('/api/admin/products/:id/prices', (req, res) => {
+        try {
+            const productId = parseInt(req.params.id);
+            const prices = db.getProductPrices(productId);
+            if (!prices) {
+                return res.status(404).json({ error: true, message: 'Product not found', code: 'NOT_FOUND' });
+            }
+            res.json(prices);
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Set manual prices + visibility for a product
+    app.put('/api/admin/products/:id/prices', (req, res) => {
+        try {
+            const productId = parseInt(req.params.id);
+            const product = db.getProductById(productId);
+            if (!product) {
+                return res.status(404).json({ error: true, message: 'Product not found', code: 'NOT_FOUND' });
+            }
+
+            const { prices, visibleCurrencies } = req.body;
+
+            // Set manual prices
+            if (prices && typeof prices === 'object') {
+                for (const [currency, price] of Object.entries(prices)) {
+                    if (price === null) {
+                        db.deleteProductPrice(productId, currency);
+                    } else {
+                        db.upsertProductPrice(productId, currency, parseFloat(price));
+                    }
+                }
+            }
+
+            // Set visibility
+            if (visibleCurrencies !== undefined) {
+                db.setProductVisibility(productId, visibleCurrencies);
+            }
+
+            const updated = db.getProductPrices(productId);
+            res.json({ message: 'Giá sản phẩm đã cập nhật', ...updated });
+        } catch (err) {
+            const status = err.code === 'INVALID_CURRENCY' || err.code === 'INVALID_PRICE' ? 400 : 500;
+            res.status(status).json({ error: true, message: err.message, code: err.code || 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Delete manual price for a currency
+    app.delete('/api/admin/products/:id/prices/:currency', (req, res) => {
+        try {
+            const productId = parseInt(req.params.id);
+            const currency = req.params.currency.toUpperCase();
+            db.deleteProductPrice(productId, currency);
+            res.json({ message: `Giá ${currency} đã xóa, sẽ dùng auto-convert` });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Get all exchange rates
+    app.get('/api/admin/exchange-rates', (req, res) => {
+        try {
+            const rates = db.getExchangeRates();
+            res.json({
+                baseCurrency: 'VND',
+                supportedCurrencies: db.SUPPORTED_CURRENCIES,
+                rates,
+            });
+        } catch (err) {
+            res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    // Set manual exchange rate
+    app.put('/api/admin/exchange-rates', (req, res) => {
+        try {
+            const { currency, rate } = req.body;
+            if (!currency) {
+                return res.status(400).json({ error: true, message: 'Currency required', code: 'VALIDATION_ERROR' });
+            }
+            db.setExchangeRateManual(currency.toUpperCase(), rate !== undefined ? parseFloat(rate) : null);
+            const rates = db.getExchangeRates();
+            res.json({ message: rate !== null ? `Tỷ giá ${currency} đã cập nhật` : `Tỷ giá ${currency} đã reset`, rates });
+        } catch (err) {
+            const status = err.code === 'INVALID_CURRENCY' || err.code === 'INVALID_RATE' ? 400 : 500;
+            res.status(status).json({ error: true, message: err.message, code: err.code || 'INTERNAL_ERROR' });
+        }
+    });
+
     // ==================== Credentials ====================
 
     // Search credentials by content (keyword in data) — MUST be before :productId route

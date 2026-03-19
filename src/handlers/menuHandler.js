@@ -2,12 +2,13 @@ const config = require('../config');
 const db = require('../database');
 const { CALLBACKS } = require('./callbacks');
 const { t, getLang, setLang, hasLangPreference } = require('../locales');
+const { detectCurrency, formatCurrencyPrice } = require('./currencyHandler');
 
 /**
  * Format price to Vietnamese format: 15.000 đ
  */
-function formatPrice(price) {
-    return price.toLocaleString('vi-VN') + ' đ';
+function formatPrice(price, currency = 'VND') {
+    return formatCurrencyPrice(price, currency);
 }
 
 /**
@@ -32,6 +33,21 @@ function setupMenuHandler(bot) {
     bot.onText(/\/start/, (msg) => {
         const userId = msg.from.id;
         const lang = getLang(userId, db.getUserLanguage);
+
+        // Auto-detect currency from language_code on first visit
+        const languageCode = msg.from.language_code;
+        if (languageCode) {
+            try {
+                const existingCurrency = db.getUserCurrency(userId);
+                // Only auto-detect if user hasn't manually set currency yet
+                if (existingCurrency === 'VND') {
+                    const detected = detectCurrency(languageCode);
+                    if (detected !== 'VND') {
+                        db.setUserCurrency(userId, detected, languageCode);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
 
         // First-time user → show language prompt
         if (!hasLangPreference(userId)) {
@@ -154,6 +170,9 @@ function setupMenuHandler(bot) {
             bot.answerCallbackQuery(query.id);
             db.setUserLanguage(userId, 'vi');
             setLang(userId, 'vi');
+            // Sync currency: VI → VND
+            const newCurrency = detectCurrency('vi');
+            db.setUserCurrency(userId, newCurrency, 'vi');
             // Send confirmation, then main menu
             bot.editMessageText(t('lang_set', 'vi'), {
                 chat_id: chatId,
@@ -171,6 +190,9 @@ function setupMenuHandler(bot) {
             bot.answerCallbackQuery(query.id);
             db.setUserLanguage(userId, 'en');
             setLang(userId, 'en');
+            // Sync currency: EN → USD
+            const newCurrency = detectCurrency('en');
+            db.setUserCurrency(userId, newCurrency, 'en');
             bot.editMessageText(t('lang_set', 'en'), {
                 chat_id: chatId,
                 message_id: query.message.message_id,
@@ -270,6 +292,7 @@ function sendMainMenu(bot, chatId, editMessageId = null, userId = null) {
             { text: t('btn_language', lang), callback_data: CALLBACKS.MENU_LANGUAGE },
         ],
         [
+            { text: '💱 ' + (lang === 'en' ? 'Currency' : 'Tiền tệ'), callback_data: CALLBACKS.MENU_CURRENCY },
             { text: t('btn_support', lang), url: config.supportUrl },
         ],
     ];
