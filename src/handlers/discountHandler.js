@@ -243,12 +243,21 @@ async function showAvailableDiscounts(bot, chatId, userId) {
     }
 
     if (codes.length === 0) {
-        bot.sendMessage(chatId,
-            '🎟 **MÃ GIẢM GIÁ**\n\n' +
+        const lang = getLang(userId, db.getUserLanguage);
+        const inFlow = waitingForDiscount.has(userId);
+        let text = '🎟 **MÃ GIẢM GIÁ**\n\n' +
             '😔 Hiện tại chưa có mã giảm giá nào dành cho bạn.\n' +
-            'Hãy theo dõi để nhận ưu đãi nhé!',
-            { parse_mode: 'Markdown' }
-        );
+            'Hãy theo dõi để nhận ưu đãi nhé!\n';
+        if (inFlow) {
+            text += '\n👉 ' + (lang === 'en'
+                ? '_Press "Skip ▶" above to proceed to payment._'
+                : '_Bấm "Bỏ qua ▶" ở trên để thanh toán luôn._');
+        } else {
+            text += '\n🛍 ' + (lang === 'en'
+                ? '_Browse products: /products_'
+                : '_Xem sản phẩm: /products_');
+        }
+        bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
         return;
     }
 
