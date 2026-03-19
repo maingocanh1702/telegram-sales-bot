@@ -122,6 +122,7 @@ module.exports = {
   order_bank_owner: '• Account holder: **{name}**',
   order_bank_content: '• Transfer note: **{code}**',
   order_scan_qr: '👇 Scan QR code below to pay:',
+  order_auto_confirm: '✅ After successful transfer, the bot will automatically confirm and send your account.\n\n🕐 After successful transfer, the bot will automatically confirm and send your account.',
   btn_cancel_order: '❌ Cancel Order',
   order_not_found: '❌ Order not found.',
   order_product_not_found: '❌ Product not found.',

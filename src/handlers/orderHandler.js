@@ -264,6 +264,9 @@ async function createOrder(bot, data) {
                 reply_markup: { inline_keyboard: keyboard },
             });
         }
+
+        // Auto-confirm reminder
+        bot.sendMessage(chatId, t('order_auto_confirm', lang));
     } catch (err) {
         console.error('Error creating order:', err.message);
         bot.sendMessage(chatId, t('order_create_error', lang));
@@ -348,6 +351,9 @@ async function createMultiItemOrder(bot, data) {
                 reply_markup: { inline_keyboard: keyboard },
             });
         }
+
+        // Auto-confirm reminder
+        bot.sendMessage(chatId, t('order_auto_confirm', lang));
     } catch (err) {
         console.error('Error creating multi-item order:', err.message);
         bot.sendMessage(chatId, t('order_create_error', lang));
@@ -412,6 +418,9 @@ async function createOrderUsdt(bot, data) {
         bot.sendMessage(chatId, text, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: keyboard },
+        }).then(() => {
+            // Auto-confirm reminder
+            bot.sendMessage(chatId, t('order_auto_confirm', lang));
         });
     } catch (err) {
         console.error('Error creating USDT order:', err.message);
@@ -474,6 +483,9 @@ async function createOrderPaypal(bot, data) {
         bot.sendMessage(chatId, text, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: keyboard },
+        }).then(() => {
+            // Auto-confirm reminder
+            bot.sendMessage(chatId, t('order_auto_confirm', lang));
         });
     } catch (err) {
         console.error('Error creating PayPal order:', err.message);
