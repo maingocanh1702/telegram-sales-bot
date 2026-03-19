@@ -79,19 +79,26 @@ function showPaymentMethodSelection(bot, orderData) {
     const totalAmount = orderData.totalAmount || orderData.quantity * (orderData.unitPrice || 0);
     let text = t('payment_select', lang, { total: formatPrice(totalAmount) });
 
+    // Get exchange rates for price conversion on buttons
+    const usdRate = db.getExchangeRate('USD') || 25500;
+    const eurRate = db.getExchangeRate('EUR') || 27800;
+
     const keyboard = [];
     for (const method of methods) {
         let callbackData;
         let label;
         if (method.id === 'vietqr') {
             callbackData = CALLBACKS.PAY_VIETQR;
-            label = t('btn_vietqr', lang);
+            const vndFormatted = Math.round(totalAmount).toLocaleString('vi-VN');
+            label = `🏦 VND — ${vndFormatted} đ`;
         } else if (method.id === 'usdt') {
             callbackData = CALLBACKS.PAY_USDT;
-            label = t('btn_usdt', lang);
+            const usdtAmount = (totalAmount / usdRate).toFixed(2);
+            label = `💰 USDT — ${usdtAmount} USDT`;
         } else if (method.id === 'paypal') {
             callbackData = CALLBACKS.PAY_PAYPAL;
-            label = t('btn_paypal', lang);
+            const usdAmount = (totalAmount / usdRate).toFixed(2);
+            label = `💳 USD — $${usdAmount} (PayPal)`;
         }
         keyboard.push([{ text: label, callback_data: callbackData }]);
     }
