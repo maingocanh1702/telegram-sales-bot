@@ -174,6 +174,9 @@ function setupAdminAPI(app, bot) {
             if (req.body.isFeatured !== undefined) {
                 db.updateProduct(id, { is_featured: req.body.isFeatured ? 1 : 0 });
             }
+            if (req.body.isHidden !== undefined) {
+                db.updateProduct(id, { is_hidden: req.body.isHidden ? 1 : 0 });
+            }
             res.json({ id, message: 'Product added' });
         } catch (err) {
             res.status(500).json({ error: true, message: err.message, code: 'INTERNAL_ERROR' });
@@ -198,6 +201,7 @@ function setupAdminAPI(app, bot) {
             if (req.body.preorderStock !== undefined) updates.preorder_stock = parseInt(req.body.preorderStock) || 0;
             if (req.body.maxPerUser !== undefined) updates.max_per_user = parseInt(req.body.maxPerUser) || 0;
             if (req.body.isFeatured !== undefined) updates.is_featured = req.body.isFeatured ? 1 : 0;
+            if (req.body.isHidden !== undefined) updates.is_hidden = req.body.isHidden ? 1 : 0;
             if (req.body.categoryId !== undefined) updates.category_id = req.body.categoryId || null;
             if (req.body.warrantyDays !== undefined) updates.warranty_days = req.body.warrantyDays ? parseInt(req.body.warrantyDays) : null;
             // Seller info + cost price
