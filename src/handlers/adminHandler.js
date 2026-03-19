@@ -4,6 +4,57 @@ const { formatPrice } = require('./menuHandler');
 const { deliverCredentials } = require('./deliveryHandler');
 
 /**
+ * Find product by ID, name, or slug (case-insensitive, partial match)
+ * Supports: "3", "claude max 5x", "claude-max-5x", "claude"
+ */
+function findProduct(query) {
+    if (!query) return null;
+    const q = query.trim();
+
+    // Try numeric ID first
+    if (/^\d+$/.test(q)) {
+        return db.getProductById(parseInt(q));
+    }
+
+    // Search by name (case-insensitive)
+    const allProducts = db.getAllProductsStock();
+    const searchTerm = q.toLowerCase().replace(/-/g, ' ');
+
+    // Exact match
+    let found = allProducts.find(p => p.name.toLowerCase() === searchTerm);
+    if (found) return db.getProductById(found.id);
+
+    // Partial match (contains)
+    const matches = allProducts.filter(p => p.name.toLowerCase().includes(searchTerm));
+    if (matches.length === 1) return db.getProductById(matches[0].id);
+    if (matches.length > 1) {
+        return { multiple: matches };
+    }
+
+    // Slug match: "claude-max-5x" → matches "Claude Max 5x 1 tháng"
+    const slugMatches = allProducts.filter(p => {
+        const slug = p.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        return slug.includes(searchTerm.replace(/[^a-z0-9]+/g, ' ').trim());
+    });
+    if (slugMatches.length === 1) return db.getProductById(slugMatches[0].id);
+    if (slugMatches.length > 1) return { multiple: slugMatches };
+
+    return null;
+}
+
+/**
+ * Format disambiguation message when multiple products match
+ */
+function formatMultipleMatches(matches) {
+    let text = '⚠️ Tìm thấy nhiều SP phù hợp:\n\n';
+    matches.forEach(p => {
+        text += `  [ID:${p.id}] ${p.name}\n`;
+    });
+    text += '\nVui lòng dùng ID cụ thể.';
+    return text;
+}
+
+/**
  * Admin commands for managing products and orders
  * Only accessible by ADMIN_TELEGRAM_ID
  */
@@ -15,12 +66,14 @@ function setupAdminHandler(bot) {
         const text = '🔐 **ADMIN PANEL**\n\n' +
             '📌 Commands:\n' +
             '`/addproduct name | price | description | note`\n' +
-            '`/addcred product_id | key1:val1 | key2:val2`\n' +
-            '`/bulkcred product_id` + gửi file txt\n' +
+            '`/addcred <tên SP hoặc ID> | key1:val1 | key2:val2`\n' +
+            '`/bulkcred <tên SP hoặc ID>` + gửi file txt\n' +
             '`/stock` — Xem tồn kho\n' +
             '`/orders` — Đơn hàng gần đây\n' +
             '`/confirm order_code` — Xác nhận thủ công\n' +
-            '`/deleteproduct product_id` — Xóa sản phẩm';
+            '`/deleteproduct <tên SP hoặc ID>` — Xóa sản phẩm\n\n' +
+            '💡 _Có thể dùng tên SP thay cho ID:_\n' +
+            '`/addcred claude max 5x | username:abc | password:123`';
 
         bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
     });
@@ -54,22 +107,26 @@ function setupAdminHandler(bot) {
         );
     });
 
-    // /addcred product_id | key1:val1 | key2:val2 ...
+    // /addcred <product name or ID> | key1:val1 | key2:val2 ...
     bot.onText(/\/addcred (.+)/, (msg, match) => {
         if (!isAdmin(msg.from.id)) return;
 
         const parts = match[1].split('|').map((s) => s.trim());
         if (parts.length < 2) {
-            bot.sendMessage(msg.chat.id, '❌ Cú pháp: `/addcred product_id | key1:val1 | key2:val2`', { parse_mode: 'Markdown' });
+            bot.sendMessage(msg.chat.id, '❌ Cú pháp: `/addcred <tên SP hoặc ID> | key1:val1 | key2:val2`', { parse_mode: 'Markdown' });
             return;
         }
 
-        const productId = parseInt(parts[0]);
-        const product = db.getProductById(productId);
-        if (!product) {
-            bot.sendMessage(msg.chat.id, `❌ Sản phẩm ID ${productId} không tồn tại.`);
+        const result = findProduct(parts[0]);
+        if (!result) {
+            bot.sendMessage(msg.chat.id, `❌ Không tìm thấy sản phẩm: "${parts[0]}"\nGõ /stock để xem danh sách.`);
             return;
         }
+        if (result.multiple) {
+            bot.sendMessage(msg.chat.id, formatMultipleMatches(result.multiple));
+            return;
+        }
+        const product = result;
 
         const data = {};
         for (let i = 1; i < parts.length; i++) {
@@ -77,26 +134,29 @@ function setupAdminHandler(bot) {
             if (key) data[key.trim()] = rest.join(':').trim();
         }
 
-        db.addCredential(productId, data);
+        db.addCredential(product.id, data);
         const fields = Object.entries(data).map(([k, v]) => `${k}: ${v}`).join('\n');
-        bot.sendMessage(msg.chat.id, `✅ Đã thêm credential cho ${product.name}:\n${fields}`);
+        bot.sendMessage(msg.chat.id, `✅ Đã thêm credential cho **${product.name}**:\n${fields}`, { parse_mode: 'Markdown' });
     });
 
-    // /bulkcred product_id — then send a file
+    // /bulkcred <product name or ID> — then send a file
     const waitingForBulkFile = new Map();
 
-    bot.onText(/\/bulkcred (\d+)/, (msg, match) => {
+    bot.onText(/\/bulkcred (.+)/, (msg, match) => {
         if (!isAdmin(msg.from.id)) return;
 
-        const productId = parseInt(match[1]);
-        const product = db.getProductById(productId);
-
-        if (!product) {
-            bot.sendMessage(msg.chat.id, `❌ Sản phẩm ID ${productId} không tồn tại.`);
+        const result = findProduct(match[1].trim());
+        if (!result) {
+            bot.sendMessage(msg.chat.id, `❌ Không tìm thấy sản phẩm: "${match[1].trim()}"\nGõ /stock để xem danh sách.`);
             return;
         }
+        if (result.multiple) {
+            bot.sendMessage(msg.chat.id, formatMultipleMatches(result.multiple));
+            return;
+        }
+        const product = result;
 
-        waitingForBulkFile.set(msg.from.id, { productId, product });
+        waitingForBulkFile.set(msg.from.id, { productId: product.id, product });
         const fields = JSON.parse(product.credential_fields || '[]');
         const format = fields.map(f => f.key).join(':');
         bot.sendMessage(msg.chat.id,
@@ -165,8 +225,9 @@ function setupAdminHandler(bot) {
 
         let text = '📊 **TỒN KHO**\n\n';
         for (const s of stock) {
-            const status = s.is_active ? '🟢' : '🔴';
-            text += `${status} [ID:${s.id}] ${s.name}\n`;
+            const status = s.is_active ? (Number(s.is_hidden) ? '👁️' : '🟢') : '🔴';
+            const hiddenTag = Number(s.is_hidden) ? ' _(ẩn)_' : '';
+            text += `${status} **[ID:${s.id}]** ${s.name}${hiddenTag}\n`;
             text += `   💰 ${formatPrice(s.price)} | Available: ${s.available} | Sold: ${s.sold} | Total: ${s.total}\n\n`;
         }
 
@@ -225,20 +286,27 @@ function setupAdminHandler(bot) {
         bot.sendMessage(msg.chat.id, `📬 Đã gửi sản phẩm cho @${order.telegram_username || order.telegram_user_id}`);
     });
 
-    // /deleteproduct product_id
-    bot.onText(/\/deleteproduct (\d+)/, (msg, match) => {
+    // /deleteproduct <product name or ID>
+    bot.onText(/\/deleteproduct (.+)/, (msg, match) => {
         if (!isAdmin(msg.from.id)) return;
 
-        const productId = parseInt(match[1]);
-        const product = db.getProductById(productId);
-
-        if (!product) {
-            bot.sendMessage(msg.chat.id, `❌ Sản phẩm ID ${productId} không tồn tại.`);
+        const result = findProduct(match[1].trim());
+        if (!result) {
+            bot.sendMessage(msg.chat.id, `❌ Không tìm thấy sản phẩm: "${match[1].trim()}"\nGõ /stock để xem danh sách.`);
             return;
         }
+        if (result.multiple) {
+            bot.sendMessage(msg.chat.id, formatMultipleMatches(result.multiple));
+            return;
+        }
+        const product = result;
 
-        db.deleteProduct(productId);
-        bot.sendMessage(msg.chat.id, `✅ Đã xóa sản phẩm: ${product.name} (ID: ${productId})`);
+        const deleteResult = db.deleteProduct(product.id);
+        if (deleteResult.action === 'deleted') {
+            bot.sendMessage(msg.chat.id, `🗑️ Đã xóa hẳn: **${product.name}** (ID: ${product.id})`, { parse_mode: 'Markdown' });
+        } else {
+            bot.sendMessage(msg.chat.id, `⚠️ **${product.name}** có ${deleteResult.orderCount} đơn hàng → chuyển sang Inactive (không xóa hẳn)`, { parse_mode: 'Markdown' });
+        }
     });
 }
 
