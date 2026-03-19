@@ -32,27 +32,11 @@ function setupMenuHandler(bot) {
     // /start command
     bot.onText(/\/start/, (msg) => {
         const userId = msg.from.id;
-        const lang = getLang(userId, db.getUserLanguage);
-
-        // Auto-detect currency from language_code on first visit
         const languageCode = msg.from.language_code;
-        if (languageCode) {
-            try {
-                const existingCurrency = db.getUserCurrency(userId);
-                // Only auto-detect if user hasn't manually set currency yet
-                if (existingCurrency === 'VND') {
-                    const detected = detectCurrency(languageCode);
-                    if (detected !== 'VND') {
-                        db.setUserCurrency(userId, detected, languageCode);
-                    }
-                }
-            } catch (e) { /* ignore */ }
-        }
 
-        // Load or auto-detect language (same pattern as currency)
+        // === 1. Auto-detect LANGUAGE first (before currency creates DB record) ===
         if (!hasLangPreference(userId)) {
             const dbLang = db.getUserLanguage(userId);
-            // Check if user has explicitly saved a preference in DB
             let hasDbRecord = false;
             try {
                 const result = db.getDb().exec(
@@ -67,15 +51,29 @@ function setupMenuHandler(bot) {
                 setLang(userId, dbLang);
             } else {
                 // New user → auto-detect from Telegram language_code
+                // null/undefined → 'vi' (fallback cho Telegram client cũ)
                 const tgLang = (languageCode || '').toLowerCase().split('-')[0];
-                const detectedLang = (tgLang === 'vi') ? 'vi' : 'en';
+                const detectedLang = (!tgLang || tgLang === 'vi') ? 'vi' : 'en';
                 setLang(userId, detectedLang);
                 db.setUserLanguage(userId, detectedLang);
             }
-            sendMainMenu(bot, msg.chat.id, null, userId);
-        } else {
-            sendMainMenu(bot, msg.chat.id, null, userId);
         }
+
+        // === 2. Auto-detect CURRENCY after (won't interfere with language) ===
+        if (languageCode) {
+            try {
+                const existingCurrency = db.getUserCurrency(userId);
+                // Only auto-detect if user hasn't manually set currency yet
+                if (existingCurrency === 'VND') {
+                    const detected = detectCurrency(languageCode);
+                    if (detected !== 'VND') {
+                        db.setUserCurrency(userId, detected, languageCode);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        sendMainMenu(bot, msg.chat.id, null, userId);
     });
 
     // /language command
