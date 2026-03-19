@@ -1355,7 +1355,8 @@ function setProductVisibility(productId, currencies) {
 function getVisibleProducts(userCurrency = 'VND') {
     const stmt = db.prepare(`
         SELECT p.*, 
-               (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as stock
+               (SELECT COUNT(*) FROM credentials WHERE product_id = p.id AND CAST(is_sold AS INTEGER) = 0) as credential_stock,
+               (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE product_id = p.id AND status IN ('paid','delivered')) as order_sold
         FROM products p
         WHERE CAST(p.is_active AS INTEGER) = 1
           AND COALESCE(p.is_hidden, 0) = 0
@@ -1367,7 +1368,17 @@ function getVisibleProducts(userCurrency = 'VND') {
     `);
     stmt.bind([userCurrency]);
     const results = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
+    while (stmt.step()) {
+        const row = stmt.getAsObject();
+        if (row.product_type === 'invite') {
+            row.stock = Math.max(0, (row.invite_slots || 0) - (row.order_sold || 0));
+        } else if (row.product_type === 'preorder') {
+            row.stock = Math.max(0, (row.preorder_stock || 0) - (row.order_sold || 0));
+        } else {
+            row.stock = row.credential_stock;
+        }
+        results.push(row);
+    }
     stmt.free();
     return results;
 }
