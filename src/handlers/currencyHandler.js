@@ -6,7 +6,7 @@ const { t, getLang } = require('../locales');
 
 const LANGUAGE_CURRENCY_MAP = {
     vi: 'VND',
-    en: 'USD',
+    en: 'VND', // Vietnamese shop — most EN users are Vietnamese with English Telegram
     de: 'EUR',
     fr: 'EUR',
     es: 'EUR',
