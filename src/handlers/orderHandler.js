@@ -591,7 +591,8 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
 
     let text = t('order_history_title', lang);
     text += t('order_history_nav', lang, { current: currentPage + 1, total: totalPages });
-    text += ` — ${allOrders.length} ${lang === 'en' ? 'orders' : 'đơn'}\n\n`;
+    text += ` — ${allOrders.length} ${lang === 'en' ? 'orders' : 'đơn'}\n`;
+    text += lang === 'en' ? '👆 _Tap an order to view details_\n\n' : '👆 _Nhấn vào đơn hàng để xem chi tiết_\n\n';
 
     const keyboard = [];
     for (const order of orders) {
@@ -715,8 +716,23 @@ function showOrderDetail(bot, chatId, messageId, orderCode, userId = null) {
         text += `💳 ${order.payment_method.toUpperCase()}\n`;
     }
 
-    // Warranty info
-    const product = db.getProductById(order.product_id);
+    // Warranty info — try product_id first, fallback to name lookup
+    let product = order.product_id ? db.getProductById(order.product_id) : null;
+    if (!product && order.product_name) {
+        // Fallback: find product by name for older orders without product_id
+        try {
+            const result = db.getDb().exec(
+                'SELECT * FROM products WHERE name = ? LIMIT 1',
+                [order.product_name]
+            );
+            if (result.length > 0 && result[0].values.length > 0) {
+                const cols = result[0].columns;
+                const vals = result[0].values[0];
+                product = {};
+                cols.forEach((c, i) => product[c] = vals[i]);
+            }
+        } catch (e) { /* ignore */ }
+    }
     if (product && product.warranty_days) {
         text += `🛡 Bảo hành: **${product.warranty_days} ngày**`;
         if (order.delivered_at) {
