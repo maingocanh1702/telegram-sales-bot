@@ -683,6 +683,25 @@ function showOrderDetail(bot, chatId, messageId, orderCode, userId = null) {
         text += `💳 ${order.payment_method.toUpperCase()}\n`;
     }
 
+    // Warranty info
+    const product = db.getProductById(order.product_id);
+    if (product && product.warranty_days) {
+        text += `🛡 Bảo hành: **${product.warranty_days} ngày**`;
+        if (order.delivered_at) {
+            const deliveredDate = new Date(order.delivered_at);
+            const warrantyEnd = new Date(deliveredDate);
+            warrantyEnd.setDate(warrantyEnd.getDate() + product.warranty_days);
+            const now = new Date();
+            const daysLeft = Math.ceil((warrantyEnd - now) / (1000 * 60 * 60 * 24));
+            if (daysLeft > 0) {
+                text += ` — còn **${daysLeft} ngày** (đến ${formatDateTime(warrantyEnd.toISOString())})`;
+            } else {
+                text += ` — ⚠️ _đã hết hạn_`;
+            }
+        }
+        text += '\n';
+    }
+
     const keyboard = [];
     if (order.status === 'pending') {
         keyboard.push([{ text: t('btn_cancel_order', lang), callback_data: `${CALLBACKS.CANCEL_ORDER_PREFIX}${order.order_code}` }]);

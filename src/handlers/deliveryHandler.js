@@ -175,8 +175,14 @@ async function deliverCredential(bot, order, product) {
         }
 
         text += `━━━━━━━━━━━━━━━━━━\n`;
-        text += `📅 Ngày trả đơn: ${formatDeliveryDate()}\n\n`;
-        text += `⚠️ Lưu ý: Vui lòng đổi mật khẩu sau khi nhận tài khoản.\n`;
+        text += `📅 Ngày trả đơn: ${formatDeliveryDate()}\n`;
+        if (product && product.warranty_days) {
+            const warrantyEnd = new Date();
+            warrantyEnd.setDate(warrantyEnd.getDate() + product.warranty_days);
+            const endStr = formatDeliveryDateFromDate(warrantyEnd);
+            text += `🛡 Bảo hành: **${product.warranty_days} ngày** (đến ${endStr})\n`;
+        }
+        text += `\n⚠️ Lưu ý: Vui lòng đổi mật khẩu sau khi nhận tài khoản.\n`;
         text += `Cảm ơn bạn đã mua hàng! 🙏`;
 
         await bot.sendMessage(order.telegram_user_id, text, {
@@ -350,12 +356,15 @@ function setupInviteConfirmHandler(bot) {
  * Format delivery date in Vietnamese format: DD/MM/YYYY HH:mm
  */
 function formatDeliveryDate() {
-    const now = new Date();
-    const day = now.getDate().toString().padStart(2, '0');
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    const year = now.getFullYear();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
+    return formatDeliveryDateFromDate(new Date());
+}
+
+function formatDeliveryDateFromDate(date) {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
     return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
