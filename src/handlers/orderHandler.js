@@ -575,8 +575,18 @@ function showUserOrders(bot, chatId, messageId, userId, page = 0) {
     for (const order of orders) {
         const emoji = statusEmoji[order.status] || '📦';
         const label = t(`status_${order.status}`, lang) || order.status;
+        let warrantyTag = '';
+        // Show warranty badge for delivered orders
+        if (order.status === 'delivered' && order.product_id) {
+            const product = db.getProductById(order.product_id);
+            if (product && product.warranty_days && order.delivered_at) {
+                const warrantyEnd = new Date(new Date(order.delivered_at).getTime() + product.warranty_days * 86400000);
+                const daysLeft = Math.ceil((warrantyEnd - new Date()) / 86400000);
+                warrantyTag = daysLeft > 0 ? ` 🛡${daysLeft}d` : ' ⚠️hết BH';
+            }
+        }
         keyboard.push([{
-            text: `${emoji} #${order.order_code} | ${order.product_name} x${order.quantity} | ${label}`,
+            text: `${emoji} #${order.order_code} | ${order.product_name} x${order.quantity} | ${label}${warrantyTag}`,
             callback_data: `${CALLBACKS.ORDER_VIEW_PREFIX}${order.order_code}`,
         }]);
     }
