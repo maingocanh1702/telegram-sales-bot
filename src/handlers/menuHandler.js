@@ -49,18 +49,29 @@ function setupMenuHandler(bot) {
             } catch (e) { /* ignore */ }
         }
 
-        // First-time user → auto-detect or load from DB
+        // First-time user → show language prompt (per feature doc)
         if (!hasLangPreference(userId)) {
             const dbLang = db.getUserLanguage(userId);
-            if (dbLang && dbLang !== 'vi') {
-                // User has a saved non-vi preference in DB, load it
+            // Check if user has a saved record in DB
+            let hasDbRecord = false;
+            try {
+                const result = db.getDb().exec(
+                    'SELECT language FROM user_preferences WHERE telegram_user_id = ?',
+                    [userId]
+                );
+                if (result.length > 0 && result[0].values.length > 0) {
+                    hasDbRecord = true;
+                }
+            } catch (e) { /* ignore */ }
+
+            if (hasDbRecord && dbLang) {
+                // Returning user → load saved language, show menu directly
                 setLang(userId, dbLang);
+                sendMainMenu(bot, msg.chat.id, null, userId);
             } else {
-                // New user or Vietnamese → default to Vietnamese, no prompt
-                setLang(userId, 'vi');
-                db.setUserLanguage(userId, 'vi');
+                // New user → show bilingual language prompt
+                showLanguagePrompt(bot, msg.chat.id);
             }
-            sendMainMenu(bot, msg.chat.id, null, userId);
         } else {
             sendMainMenu(bot, msg.chat.id, null, userId);
         }
