@@ -1925,8 +1925,8 @@ Số Lượng Đang Hiện Có 10"
         }
 
         // Show confirmation dialog
-        const statusIcons = { live: '✅', redeemed: '🔴', expired: '⏰', dead: '💀', in_db_sold: '📦', in_db_available: '⚠️', unknown: '❓' };
-        const statusLabels = { live: 'Còn sống', redeemed: 'Đã redeem', expired: 'Hết hạn', dead: 'Dead', in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)', unknown: '?' };
+        const statusIcons = { live: '✅', redeemed: '🔴', unavailable: '🚫', expired: '⏰', dead: '💀', in_db_sold: '📦', in_db_available: '⚠️', unknown: '❓' };
+        const statusLabels = { live: 'Còn sống', redeemed: 'Đã redeem', unavailable: 'Không khả dụng', expired: 'Hết hạn', dead: 'Dead', in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)', unknown: '?' };
         let html = '';
 
         if (hasDbDups) {
@@ -2008,6 +2008,7 @@ Số Lượng Đang Hiện Có 10"
         const statusColors = {
           live: { bg: 'rgba(34,197,94,0.15)', border: 'rgba(34,197,94,0.4)', text: '#22c55e', icon: '✅', label: 'Còn sống' },
           redeemed: { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', icon: '🔴', label: 'Đã redeem' },
+          unavailable: { bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.4)', text: '#fb923c', icon: '🚫', label: 'Không khả dụng' },
           in_db_sold: { bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.4)', text: '#fb923c', icon: '📦', label: 'Trong kho (đã giao)' },
           in_db_available: { bg: 'rgba(250,204,21,0.15)', border: 'rgba(250,204,21,0.4)', text: '#facc15', icon: '⚠️', label: 'Trong kho (chưa giao)' },
           expired: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', text: '#f59e0b', icon: '⏰', label: 'Hết hạn' },
@@ -2116,9 +2117,10 @@ Số Lượng Đang Hiện Có 10"
       if (!results || results.length === 0) return;
 
       const statusMap = {
-        live: 'Còn sống', redeemed: 'Đã redeem', expired: 'Hết hạn',
-        dead: 'Dead', cf_blocked: 'Cloudflare blocked', unknown: 'Không rõ',
-        in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)',
+        live: 'Còn sống', redeemed: 'Đã redeem', unavailable: 'Không khả dụng',
+        expired: 'Hết hạn', dead: 'Dead', cf_blocked: 'Cloudflare blocked',
+        unknown: 'Không rõ', in_db_sold: 'Trong kho (đã giao)',
+        in_db_available: 'Trong kho (chưa giao)',
         timeout: 'Timeout', error: 'Lỗi', redirected: 'Redirect',
       };
 
@@ -2154,9 +2156,10 @@ Số Lượng Đang Hiện Có 10"
         }
 
         const statusMap = {
-          live: 'Còn sống', redeemed: 'Đã redeem', expired: 'Hết hạn',
-          dead: 'Dead', cf_blocked: 'Cloudflare blocked', unknown: 'Không rõ',
-          in_db_sold: 'Trong kho (đã giao)', in_db_available: 'Trong kho (chưa giao)',
+          live: 'Còn sống', redeemed: 'Đã redeem', unavailable: 'Không khả dụng',
+          expired: 'Hết hạn', dead: 'Dead', cf_blocked: 'Cloudflare blocked',
+          unknown: 'Không rõ', in_db_sold: 'Trong kho (đã giao)',
+          in_db_available: 'Trong kho (chưa giao)',
           timeout: 'Timeout', error: 'Lỗi',
         };
 

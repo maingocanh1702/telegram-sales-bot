@@ -582,6 +582,14 @@ function analyzeTextContent(url, httpStatus, text) {
         return { url, status: 'redeemed', httpStatus, detail: 'Gift đã được redeem' };
     }
 
+    // Unavailable — gift no longer available (could be redeemed, expired, or revoked — ambiguous)
+    if (lower.includes('no longer available') ||
+        lower.includes('no longer active') ||
+        lower.includes('gift is unavailable') ||
+        lower.includes('không còn khả dụng')) {
+        return { url, status: 'unavailable', httpStatus, detail: 'Gift không còn khả dụng' };
+    }
+
     // Expired
     if (lower.includes('expired') || lower.includes('no longer valid') || lower.includes('hết hạn')) {
         return { url, status: 'expired', httpStatus, detail: 'Link đã hết hạn' };
@@ -710,7 +718,7 @@ async function checkViaScraperApi(url) {
                 lastResult = result;
 
                 // Definitive results — accept immediately (saves credits!)
-                const definitive = ['live', 'redeemed', 'dead', 'expired'];
+                const definitive = ['live', 'redeemed', 'unavailable', 'dead', 'expired'];
                 if (definitive.includes(result.status)) {
                     console.log(`[LinkChecker] Tier "${tier.label}" definitive: ${result.status}`);
                     return result;
@@ -751,6 +759,7 @@ async function checkViaScraperApi(url) {
  */
 const CACHE_TTL = {
     redeemed: Infinity,       // Permanent
+    unavailable: Infinity,    // Permanent (gift no longer available)
     dead: 24 * 60 * 60000,    // 24 hours
     expired: 24 * 60 * 60000, // 24 hours
     live: 15 * 60000,         // 15 minutes
