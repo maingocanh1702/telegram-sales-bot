@@ -84,7 +84,7 @@ function setupMenuHandler(bot) {
         const text = msg.text;
 
         // Match product button (VI or EN)
-        if (text === '🛒 Sản phẩm' || text === '🛒 Products') {
+        if (text === '🛍 Sản phẩm' || text === '🛒 Sản phẩm' || text === '🛍 Products' || text === '🛒 Products') {
             const { showProductList } = require('./productHandler');
             showProductList(bot, chatId, null, userId);
             return;
