@@ -70,6 +70,7 @@ function setupAdminHandler(bot) {
             '`/bulkcred <tên SP hoặc ID>` + gửi file txt\n' +
             '`/stock` — Xem tồn kho\n' +
             '`/orders` — Đơn hàng gần đây\n' +
+            '`/myorders` — Đơn hàng bạn đã mua\n' +
             '`/confirm order_code` — Xác nhận thủ công\n' +
             '`/deleteproduct <tên SP hoặc ID>` — Xóa sản phẩm\n\n' +
             '💡 _Có thể dùng tên SP thay cho ID:_\n' +
@@ -234,10 +235,18 @@ function setupAdminHandler(bot) {
         bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
     });
 
-    // /orders — recent orders (admin view)
+    // /orders — recent orders (admin view) OR user's own orders
     bot.onText(/\/orders/, (msg) => {
-        if (!isAdmin(msg.from.id)) return;
+        const userId = msg.from.id;
 
+        // Non-admin: show their own orders
+        if (!isAdmin(userId)) {
+            const { showUserOrders } = require('./orderHandler');
+            showUserOrders(bot, msg.chat.id, null, userId);
+            return;
+        }
+
+        // Admin: show all recent orders (dashboard view)
         const orders = db.getRecentOrders(20);
 
         if (orders.length === 0) {
@@ -263,7 +272,16 @@ function setupAdminHandler(bot) {
             text += `   📅 ${o.created_at}\n\n`;
         }
 
+        text += `\n💡 _Gõ /myorders để xem đơn hàng của bạn._`;
+
         bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
+    });
+
+    // /myorders — admin's own purchases (as customer)
+    bot.onText(/\/myorders/, (msg) => {
+        if (!isAdmin(msg.from.id)) return; // only admin needs this, others use /orders
+        const { showUserOrders } = require('./orderHandler');
+        showUserOrders(bot, msg.chat.id, null, msg.from.id);
     });
 
     // /confirm order_code — manual confirmation
