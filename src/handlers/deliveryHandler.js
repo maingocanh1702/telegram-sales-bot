@@ -175,6 +175,7 @@ async function deliverCredential(bot, order, product) {
         }
 
         text += `━━━━━━━━━━━━━━━━━━\n`;
+        text += `📅 Ngày trả đơn: ${formatDeliveryDate()}\n\n`;
         text += `⚠️ Lưu ý: Vui lòng đổi mật khẩu sau khi nhận tài khoản.\n`;
         text += `Cảm ơn bạn đã mua hàng! 🙏`;
 
@@ -257,14 +258,16 @@ function setupInviteConfirmHandler(bot) {
             customerMsg =
                 `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
                 `📦 Sản phẩm **${order.product_name}** đã được thiết lập thành công!\n` +
-                `🎉 Bạn có thể sử dụng ngay.\n\n` +
+                `🎉 Bạn có thể sử dụng ngay.\n` +
+                `📅 Ngày trả đơn: ${formatDeliveryDate()}\n\n` +
                 `Cảm ơn bạn đã mua hàng! 🙏`;
         } else {
             // Email only → invite sent to customer's email
             customerMsg =
                 `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
                 `📧 Đã gửi invite đến: **${order.customer_email}**\n` +
-                `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n\n` +
+                `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n` +
+                `📅 Ngày trả đơn: ${formatDeliveryDate()}\n\n` +
                 `Cảm ơn bạn đã mua hàng! 🙏`;
         }
 
@@ -325,7 +328,8 @@ function setupInviteConfirmHandler(bot) {
             `✅ **ĐƠN HÀNG #${orderCode} — HOÀN TẤT**\n\n` +
             `📦 SP: **${order.product_name}**\n` +
             `📧 Thông tin đã gửi đến: **${order.customer_email}**\n` +
-            `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n\n` +
+            `📥 Vui lòng kiểm tra email (cả thư mục Spam).\n` +
+            `📅 Ngày trả đơn: ${formatDeliveryDate()}\n\n` +
             `Cảm ơn bạn đã mua hàng! 🙏`,
             {
                 parse_mode: 'Markdown',
@@ -340,6 +344,19 @@ function setupInviteConfirmHandler(bot) {
 
         console.log(`✅ Preorder fulfilled for order ${orderCode} → ${order.customer_email}`);
     });
+}
+
+/**
+ * Format delivery date in Vietnamese format: DD/MM/YYYY HH:mm
+ */
+function formatDeliveryDate() {
+    const now = new Date();
+    const day = now.getDate().toString().padStart(2, '0');
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
 module.exports = { deliverCredentials, setupInviteConfirmHandler };
