@@ -75,7 +75,7 @@ function setupAdminHandler(bot) {
             '`/confirm order_code` — Xác nhận thủ công\n' +
             '`/deleteproduct <tên SP hoặc ID>` — Xóa sản phẩm\n\n' +
             '🎟 **Mã giảm giá:**\n' +
-            '`/adddiscount CODE | type | value [| max_uses] [| expires_days]`\n' +
+            '`/adddiscount CODE | type | value [| max_uses] [| expires_days] [| hidden]`\n' +
             '`/discounts` — Xem tất cả mã giảm giá\n' +
             '`/deldiscount CODE` — Xóa mã giảm giá\n\n' +
             '💡 _Có thể dùng tên SP thay cho ID:_\n' +
@@ -86,27 +86,29 @@ function setupAdminHandler(bot) {
 
     // ==================== Discount Code Admin Commands ====================
 
-    // /adddiscount CODE | type | value [| max_uses] [| expires_days]
+    // /adddiscount CODE | type | value [| max_uses] [| expires_days] [| hidden]
     bot.onText(/\/adddiscount (.+)/, (msg, match) => {
         if (!isAdmin(msg.from.id)) return;
 
         const parts = match[1].split('|').map(s => s.trim());
         if (parts.length < 3) {
             bot.sendMessage(msg.chat.id,
-                '❌ Cú pháp: `/adddiscount CODE | type | value [| max_uses] [| expires_days]`\n\n' +
+                '❌ Cú pháp: `/adddiscount CODE | type | value [| max_uses] [| expires_days] [| hidden]`\n\n' +
                 'VD:\n' +
                 '`/adddiscount SAVE10 | percent | 10`\n' +
                 '`/adddiscount FLAT50K | fixed | 50000 | 100`\n' +
-                '`/adddiscount XMAS | percent | 20 | 50 | 30`\n\n' +
+                '`/adddiscount XMAS | percent | 20 | 50 | 30`\n' +
+                '`/adddiscount VIP20 | percent | 20 | 0 | 0 | hidden`\n\n' +
                 '• `type`: `percent` hoặc `fixed`\n' +
                 '• `max_uses`: 0 = unlimited (mặc định)\n' +
-                '• `expires_days`: hết hạn sau N ngày',
+                '• `expires_days`: 0 hoặc bỏ trống = không hết hạn\n' +
+                '• `hidden` hoặc `ẩn`: ẩn khỏi /discount listing',
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        const [code, type, valueStr, maxUsesStr, expiresDaysStr] = parts;
+        const [code, type, valueStr, maxUsesStr, expiresDaysStr, hiddenStr] = parts;
 
         // Validate code
         const cleanCode = code.toUpperCase().trim();
@@ -150,14 +152,15 @@ function setupAdminHandler(bot) {
         let expiresAt = null;
         if (expiresDaysStr) {
             const days = parseInt(expiresDaysStr);
-            if (isNaN(days) || days <= 0) {
-                bot.sendMessage(msg.chat.id, '❌ Số ngày hết hạn phải > 0.');
-                return;
+            if (!isNaN(days) && days > 0) {
+                const expDate = new Date();
+                expDate.setDate(expDate.getDate() + days);
+                expiresAt = expDate.toISOString();
             }
-            const expDate = new Date();
-            expDate.setDate(expDate.getDate() + days);
-            expiresAt = expDate.toISOString();
         }
+
+        // Optional: hidden flag
+        const isHidden = hiddenStr ? ['hidden', 'ẩn', '1', 'true'].includes(hiddenStr.toLowerCase()) : false;
 
         // Create discount code
         try {
@@ -167,11 +170,13 @@ function setupAdminHandler(bot) {
                 value,
                 max_uses: maxUses,
                 expires_at: expiresAt,
+                is_hidden: isHidden,
             });
 
             const valueLabel = type.toLowerCase() === 'percent' ? `${value}%` : formatPrice(value);
             const usesLabel = maxUses > 0 ? `${maxUses} lượt` : '∞ (unlimited)';
             const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('vi-VN') : 'Không hết hạn';
+            const hiddenLabel = isHidden ? '👁 Ẩn' : '👀 Hiện';
 
             bot.sendMessage(msg.chat.id,
                 `✅ Đã tạo mã giảm giá:\n\n` +
@@ -180,6 +185,7 @@ function setupAdminHandler(bot) {
                 `💰 Giá trị: -${valueLabel}\n` +
                 `🔢 Lượt dùng: ${usesLabel}\n` +
                 `📅 Hết hạn: ${expiresLabel}\n` +
+                `${hiddenLabel}\n` +
                 `🆔 ID: ${id}`,
                 { parse_mode: 'Markdown' }
             );
