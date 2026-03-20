@@ -74,11 +74,213 @@ function setupAdminHandler(bot) {
             '`/setprice <tên SP hoặc ID> | <giá mới>` — Đổi giá\n' +
             '`/confirm order_code` — Xác nhận thủ công\n' +
             '`/deleteproduct <tên SP hoặc ID>` — Xóa sản phẩm\n\n' +
+            '🎟 **Mã giảm giá:**\n' +
+            '`/adddiscount CODE | type | value [| max_uses] [| expires_days]`\n' +
+            '`/discounts` — Xem tất cả mã giảm giá\n' +
+            '`/deldiscount CODE` — Xóa mã giảm giá\n\n' +
             '💡 _Có thể dùng tên SP thay cho ID:_\n' +
             '`/addcred claude max 5x | username:abc | password:123`';
 
         bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
     });
+
+    // ==================== Discount Code Admin Commands ====================
+
+    // /adddiscount CODE | type | value [| max_uses] [| expires_days]
+    bot.onText(/\/adddiscount (.+)/, (msg, match) => {
+        if (!isAdmin(msg.from.id)) return;
+
+        const parts = match[1].split('|').map(s => s.trim());
+        if (parts.length < 3) {
+            bot.sendMessage(msg.chat.id,
+                '❌ Cú pháp: `/adddiscount CODE | type | value [| max_uses] [| expires_days]`\n\n' +
+                'VD:\n' +
+                '`/adddiscount SAVE10 | percent | 10`\n' +
+                '`/adddiscount FLAT50K | fixed | 50000 | 100`\n' +
+                '`/adddiscount XMAS | percent | 20 | 50 | 30`\n\n' +
+                '• `type`: `percent` hoặc `fixed`\n' +
+                '• `max_uses`: 0 = unlimited (mặc định)\n' +
+                '• `expires_days`: hết hạn sau N ngày',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        const [code, type, valueStr, maxUsesStr, expiresDaysStr] = parts;
+
+        // Validate code
+        const cleanCode = code.toUpperCase().trim();
+        if (!cleanCode || !/^[A-Z0-9-]+$/.test(cleanCode)) {
+            bot.sendMessage(msg.chat.id, '❌ Mã chỉ chấp nhận chữ cái, số và gạch ngang.');
+            return;
+        }
+
+        // Check duplicate
+        const existing = db.getDiscountCodeByCode(cleanCode);
+        if (existing) {
+            bot.sendMessage(msg.chat.id, `❌ Mã giảm giá \`${cleanCode}\` đã tồn tại.`, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        // Validate type
+        if (!['percent', 'fixed'].includes(type.toLowerCase())) {
+            bot.sendMessage(msg.chat.id, '❌ Loại giảm giá phải là `percent` hoặc `fixed`.', { parse_mode: 'Markdown' });
+            return;
+        }
+
+        // Validate value
+        const value = parseInt(valueStr);
+        if (isNaN(value) || value <= 0) {
+            bot.sendMessage(msg.chat.id, '❌ Giá trị giảm phải lớn hơn 0.');
+            return;
+        }
+        if (type.toLowerCase() === 'percent' && value > 100) {
+            bot.sendMessage(msg.chat.id, '❌ Giá trị phần trăm phải từ 1 đến 100.');
+            return;
+        }
+
+        // Optional: max_uses
+        const maxUses = maxUsesStr ? parseInt(maxUsesStr) : 0;
+        if (isNaN(maxUses) || maxUses < 0) {
+            bot.sendMessage(msg.chat.id, '❌ Lượt dùng tối đa phải ≥ 0 (0 = unlimited).');
+            return;
+        }
+
+        // Optional: expires_days
+        let expiresAt = null;
+        if (expiresDaysStr) {
+            const days = parseInt(expiresDaysStr);
+            if (isNaN(days) || days <= 0) {
+                bot.sendMessage(msg.chat.id, '❌ Số ngày hết hạn phải > 0.');
+                return;
+            }
+            const expDate = new Date();
+            expDate.setDate(expDate.getDate() + days);
+            expiresAt = expDate.toISOString();
+        }
+
+        // Create discount code
+        try {
+            const id = db.createDiscountCode({
+                code: cleanCode,
+                type: type.toLowerCase(),
+                value,
+                max_uses: maxUses,
+                expires_at: expiresAt,
+            });
+
+            const valueLabel = type.toLowerCase() === 'percent' ? `${value}%` : formatPrice(value);
+            const usesLabel = maxUses > 0 ? `${maxUses} lượt` : '∞ (unlimited)';
+            const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('vi-VN') : 'Không hết hạn';
+
+            bot.sendMessage(msg.chat.id,
+                `✅ Đã tạo mã giảm giá:\n\n` +
+                `🎟 Mã: \`${cleanCode}\`\n` +
+                `📊 Loại: ${type.toLowerCase() === 'percent' ? 'Phần trăm' : 'Cố định'}\n` +
+                `💰 Giá trị: -${valueLabel}\n` +
+                `🔢 Lượt dùng: ${usesLabel}\n` +
+                `📅 Hết hạn: ${expiresLabel}\n` +
+                `🆔 ID: ${id}`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            console.error('Error creating discount code:', err);
+            bot.sendMessage(msg.chat.id, `❌ Lỗi khi tạo mã: ${err.message}`);
+        }
+    });
+
+    // /discounts — list all discount codes (admin view)
+    bot.onText(/\/discounts/, (msg) => {
+        if (!isAdmin(msg.from.id)) return;
+
+        const codes = db.getDiscountCodes();
+
+        if (codes.length === 0) {
+            bot.sendMessage(msg.chat.id,
+                '🎟 **MÃ GIẢM GIÁ**\n\n' +
+                '📭 Chưa có mã giảm giá nào.\n' +
+                '➕ Tạo mới: `/adddiscount CODE | type | value`',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        let text = '🎟 **DANH SÁCH MÃ GIẢM GIÁ**\n\n';
+
+        for (const c of codes) {
+            // Status icon
+            const now = Date.now();
+            let statusIcon = '🟢';
+            let statusText = 'Active';
+            if (!c.is_active) {
+                statusIcon = '🔴';
+                statusText = 'Inactive';
+            } else if (c.expires_at && new Date(c.expires_at).getTime() < now) {
+                statusIcon = '⏰';
+                statusText = 'Expired';
+            } else if (c.max_uses > 0 && c.used_count >= c.max_uses) {
+                statusIcon = '🚫';
+                statusText = 'Exhausted';
+            }
+
+            // Value display
+            const valueLabel = c.type === 'percent' ? `${c.value}%` : formatPrice(c.value);
+            const usesLabel = c.max_uses > 0 ? `${c.used_count}/${c.max_uses}` : `${c.used_count}/∞`;
+
+            text += `${statusIcon} \`${c.code}\` — giảm ${valueLabel}\n`;
+            text += `   📊 ${statusText} | 🔢 ${usesLabel}`;
+
+            // Badges
+            const badges = [];
+            if (c.product_name) badges.push(`📦 ${c.product_name}`);
+            if (c.product_ids) badges.push('📦 Multi-SP');
+            if (c.required_group_id) badges.push('🔒 Group');
+            if (c.allowed_user_id) badges.push(`👤 ${c.allowed_user_id}`);
+            if (c.is_hidden) badges.push('👁 Ẩn');
+            if (c.is_new_user_only) badges.push('🆕 Mới');
+            if (badges.length > 0) text += ` | ${badges.join(' · ')}`;
+
+            // Expiry
+            if (c.expires_at) {
+                const expDate = new Date(c.expires_at);
+                text += `\n   📅 HSD: ${expDate.toLocaleDateString('vi-VN')}`;
+            }
+            text += '\n\n';
+        }
+
+        text += `📊 Tổng: ${codes.length} mã\n`;
+        text += `➕ Tạo mới: /adddiscount\n`;
+        text += `🗑 Xóa: \`/deldiscount CODE\``;
+
+        bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
+    });
+
+    // /deldiscount CODE — delete a discount code
+    bot.onText(/\/deldiscount (.+)/, (msg, match) => {
+        if (!isAdmin(msg.from.id)) return;
+
+        const code = match[1].trim().toUpperCase();
+        const discount = db.getDiscountCodeByCode(code);
+
+        if (!discount) {
+            bot.sendMessage(msg.chat.id, `❌ Không tìm thấy mã giảm giá: \`${code}\``, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        try {
+            db.deleteDiscountCode(discount.id);
+            bot.sendMessage(msg.chat.id,
+                `🗑️ Đã xóa mã giảm giá: \`${discount.code}\`\n` +
+                `(đã dùng ${discount.used_count} lượt)`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            console.error('Error deleting discount code:', err);
+            bot.sendMessage(msg.chat.id, `❌ Lỗi khi xóa mã: ${err.message}`);
+        }
+    });
+
+    // ==================== Product Admin Commands ====================
 
     // /addproduct name | price | description | note
     bot.onText(/\/addproduct (.+)/, (msg, match) => {
