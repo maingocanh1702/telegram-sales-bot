@@ -107,8 +107,8 @@ Code changes → Dev test → Verify → Commit → Deploy prod
 
 | | Dev (`.env.development`) | Prod (`.env.railway`) |
 |--|--|--|
-| Bot token | `REDACTED_DEV_BOT_ID:...` (test) | `REDACTED_BOT_ID:...` (CloudXShop) |
-| Admin ID | `REDACTED_ADMIN_ID` | `REDACTED_ADMIN_ID` |
+| Bot token | `<DEV_BOT_TOKEN>` | `<PROD_BOT_TOKEN>` |
+| Admin ID | `<ADMIN_TELEGRAM_ID>` | `<ADMIN_TELEGRAM_ID>` |
 | Port | `3000` | `3000` |
 | DB | `./bot.db` (local) | `/data/bot.db` (Railway volume) |
 
