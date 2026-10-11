@@ -3,7 +3,7 @@
 **v2.3.0** · [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/new?repo=https://github.com/maingocanh1702/telegram-sales-bot)
 
 > 🚀 **Tìm kiếm phiên bản SaaS Multi-Tenant & Quản lý CTV?**
-> Hãy tham khảo **BotShopez** — Nền tảng SaaS Telegram Bot hoàn chỉnh với kiến trúc Monorepo (Next.js 15, NestJS 11, PostgreSQL, Redis BullMQ, Grammy). Hỗ trợ nhiều shop tập trung, phân quyền RBAC (Owner / Admin / CTV), chia sẻ kho hàng (shared stock), tự động đối soát hoa hồng & công nợ CTV!
+> Hãy tham khảo **[BotShopez](https://botshopez.com)** — Nền tảng SaaS Telegram Bot hoàn chỉnh với kiến trúc Monorepo (Next.js 15, NestJS 11, PostgreSQL, Redis BullMQ, Grammy). Hỗ trợ nhiều shop tập trung, phân quyền RBAC (Owner / Admin / CTV), chia sẻ kho hàng (shared stock), tự động đối soát hoa hồng & công nợ CTV!
 
 Bot bán hàng Telegram tự động (phiên bản Standalone / Single-Shop): khách chọn sản phẩm → chọn số lượng → **Mua ngay** hoặc **Thêm vào giỏ** → thanh toán VietQR → hệ thống tự xác nhận thanh toán qua SePay Webhook → tự động gửi thông tin tài khoản / credentials ngay lập tức.
 
@@ -164,21 +164,22 @@ npm test
 
 ## 📦 Kiến trúc: Standalone vs SaaS Platform (BotShopez)
 
-Dự án này là phiên bản **Standalone** (đơn shop, tự vận hành). Nền tảng còn có phiên bản **SaaS Platform (BotShopez)** với quy mô doanh nghiệp:
+Dự án này là phiên bản **Standalone** (đơn shop, tự vận hành). Nền tảng còn có phiên bản **SaaS Platform** với quy mô doanh nghiệp:
 
 - **Standalone (`telegram-sales-bot` - Repo này)**: Thích hợp cho cá nhân, shop đơn lẻ muốn tự host nhanh gọn bằng SQLite và Node.js, chi phí tối thiểu, 1-click deploy Railway.
-- **SaaS Platform (BotShopez)**: Nền tảng thương mại quy mô lớn, multi-tenant cho nhiều shop, quản lý CTV (cộng tác viên) bán lại, chia sẻ kho hàng (shared stock), đối soát công nợ tự động, dashboard quản trị web hiện đại với Next.js 15 & NestJS 11.
+- **SaaS Platform ([BotShopez](https://botshopez.com))**: Nền tảng thương mại quy mô lớn, multi-tenant cho nhiều shop, quản lý CTV (cộng tác viên) bán lại, chia sẻ kho hàng (shared stock), đối soát công nợ tự động, dashboard quản trị web hiện đại với Next.js 15 & NestJS 11.
 
 ### Bảng so sánh chi tiết
 
-| Tiêu chí | Standalone (Repo này) | SaaS Platform (BotShopez) |
-|----------|-----------------------|---------------------------|
+| Tiêu chí | Standalone (Repo này) | SaaS Platform ([BotShopez](https://botshopez.com)) |
+|----------|-----------------------|---------------------------------------------------|
 | **Mô hình** | Đơn shop, cá nhân tự lưu trữ | Multi-tenant SaaS phục vụ nhiều shop & đại lý |
 | **Kiến trúc** | Node.js + SQLite (`sql.js`) + Express.js | Turborepo Monorepo: NestJS 11 + Next.js 15 + PostgreSQL 16 + Redis 7 |
 | **Bot Framework** | `node-telegram-bot-api` | Grammy (Webhook + Worker BullMQ phân tải) |
 | **Quản trị** | 1 Admin qua Telegram bot & Admin Web tĩnh | Dashboard Web hiện đại, xác thực Google OAuth & phân quyền RBAC đa cấp |
 | **Cộng tác viên (CTV)** | Không hỗ trợ | Quản lý CTV chuyên sâu, hạn mức công nợ, hoa hồng, chia sẻ kho hàng |
 | **Khả năng mở rộng** | Phù hợp shop < 1.000 đơn/ngày | Thiết kế chịu tải cao, queue bất đồng bộ, microservices sẵn sàng |
+| **Website / Trải nghiệm** | [telegram-sales-bot](https://github.com/maingocanh1702/telegram-sales-bot) | 👉 **[botshopez.com](https://botshopez.com)** |
 
 ---
 
