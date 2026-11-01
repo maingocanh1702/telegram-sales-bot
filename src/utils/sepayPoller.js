@@ -117,14 +117,14 @@ function findMatchingTransaction(order, transactions) {
 
     for (const txn of transactions) {
         // Only incoming transfers
-        if (txn.transaction_type !== 'in' && txn.amount_in <= 0) continue;
+        if (txn.transaction_type !== 'in' || !Number.isFinite(Number(txn.amount_in)) || Number(txn.amount_in) <= 0) continue;
 
         const content = (txn.transaction_content || '').toUpperCase();
         const code = (txn.code || '').toUpperCase();
         const amount = txn.amount_in || 0;
 
         // Match by code or content
-        const codeMatch = code === orderCode || content.includes(orderCode);
+        const codeMatch = code === orderCode || (content.match(/[A-Z0-9]+/g) || []).includes(orderCode);
 
         if (codeMatch && amount >= order.total_amount) {
             return txn;
