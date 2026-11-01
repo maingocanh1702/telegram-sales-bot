@@ -63,11 +63,13 @@ async function pollAndReconcile(bot) {
 
         console.log(`[SepayPoller] ${pendingOrders.length} pending orders, ${transactions.length} recent transactions`);
 
+        const consumedTransactionIds = new Set();
         for (const order of pendingOrders) {
-            const matched = findMatchingTransaction(order, transactions);
+            const matched = findMatchingTransaction(order, transactions.filter(txn => txn.id != null && !consumedTransactionIds.has(String(txn.id))));
 
             if (matched) {
                 console.log(`[SepayPoller] ✅ Matched order ${order.order_code} → txn ${matched.id} (${matched.amount_in}đ)`);
+                consumedTransactionIds.add(String(matched.id));
                 await processMatchedPayment(bot, order, matched);
             } else {
                 // Check if order has been pending too long → alert admin
@@ -117,14 +119,14 @@ function findMatchingTransaction(order, transactions) {
 
     for (const txn of transactions) {
         // Only incoming transfers
-        if (txn.transaction_type !== 'in' && txn.amount_in <= 0) continue;
+        if (txn.transaction_type !== 'in' || !Number.isFinite(Number(txn.amount_in)) || Number(txn.amount_in) <= 0) continue;
 
         const content = (txn.transaction_content || '').toUpperCase();
         const code = (txn.code || '').toUpperCase();
         const amount = txn.amount_in || 0;
 
         // Match by code or content
-        const codeMatch = code === orderCode || content.includes(orderCode);
+        const codeMatch = code === orderCode || (content.match(/[A-Z0-9]+/g) || []).includes(orderCode);
 
         if (codeMatch && amount >= order.total_amount) {
             return txn;
@@ -225,4 +227,4 @@ function checkStaleOrder(bot, order) {
     }
 }
 
-module.exports = { startSepayPoller, stopSepayPoller };
+module.exports = { startSepayPoller, stopSepayPoller, findMatchingTransaction };
