@@ -216,7 +216,14 @@ async function deliverCredential(bot, order, product) {
  */
 function setupInviteConfirmHandler(bot) {
     bot.on('callback_query', (query) => {
-        if (!query.data.startsWith(CALLBACKS.INVITE_DONE_PREFIX)) return;
+        if (!query.data || !query.data.startsWith(CALLBACKS.INVITE_DONE_PREFIX)) return;
+
+        // Only the configured admin may confirm manual fulfillment.
+        if (String(query.from?.id) !== String(config.adminTelegramId) ||
+            String(query.message?.chat?.id) !== String(config.adminTelegramId)) {
+            bot.answerCallbackQuery(query.id, { text: 'Unauthorized', show_alert: true });
+            return;
+        }
 
         const orderCode = query.data.replace(CALLBACKS.INVITE_DONE_PREFIX, '');
         const order = db.getOrderByCode(orderCode);
@@ -228,6 +235,11 @@ function setupInviteConfirmHandler(bot) {
 
         if (order.status === 'delivered') {
             bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận trước đó rồi' });
+            return;
+        }
+
+        if (order.status !== 'delivering') {
+            bot.answerCallbackQuery(query.id, { text: 'Invalid order state', show_alert: true });
             return;
         }
 
@@ -294,7 +306,14 @@ function setupInviteConfirmHandler(bot) {
 
     // Handle preorder fulfillment confirmation
     bot.on('callback_query', (query) => {
-        if (!query.data.startsWith(CALLBACKS.PREORDER_DONE_PREFIX)) return;
+        if (!query.data || !query.data.startsWith(CALLBACKS.PREORDER_DONE_PREFIX)) return;
+
+        // Only the configured admin may confirm manual fulfillment.
+        if (String(query.from?.id) !== String(config.adminTelegramId) ||
+            String(query.message?.chat?.id) !== String(config.adminTelegramId)) {
+            bot.answerCallbackQuery(query.id, { text: 'Unauthorized', show_alert: true });
+            return;
+        }
 
         const orderCode = query.data.replace(CALLBACKS.PREORDER_DONE_PREFIX, '');
         const order = db.getOrderByCode(orderCode);
@@ -306,6 +325,11 @@ function setupInviteConfirmHandler(bot) {
 
         if (order.status === 'delivered') {
             bot.answerCallbackQuery(query.id, { text: '✅ Đã xác nhận trước đó rồi' });
+            return;
+        }
+
+        if (order.status !== 'delivering') {
+            bot.answerCallbackQuery(query.id, { text: 'Invalid order state', show_alert: true });
             return;
         }
 
