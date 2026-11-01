@@ -63,11 +63,13 @@ async function pollAndReconcile(bot) {
 
         console.log(`[SepayPoller] ${pendingOrders.length} pending orders, ${transactions.length} recent transactions`);
 
+        const consumedTransactionIds = new Set();
         for (const order of pendingOrders) {
-            const matched = findMatchingTransaction(order, transactions);
+            const matched = findMatchingTransaction(order, transactions.filter(txn => txn.id != null && !consumedTransactionIds.has(String(txn.id))));
 
             if (matched) {
                 console.log(`[SepayPoller] ✅ Matched order ${order.order_code} → txn ${matched.id} (${matched.amount_in}đ)`);
+                consumedTransactionIds.add(String(matched.id));
                 await processMatchedPayment(bot, order, matched);
             } else {
                 // Check if order has been pending too long → alert admin
@@ -225,4 +227,4 @@ function checkStaleOrder(bot, order) {
     }
 }
 
-module.exports = { startSepayPoller, stopSepayPoller };
+module.exports = { startSepayPoller, stopSepayPoller, findMatchingTransaction };
