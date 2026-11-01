@@ -1,10 +1,10 @@
-const { describe, it, expect, vi } = require('vitest');
+import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../src/database', () => ({}));
 vi.mock('../src/config', () => ({ sepayApiKey: '' }));
 vi.mock('../src/handlers/deliveryHandler', () => ({ deliverCredentials: vi.fn() }));
 
-const { findMatchingTransaction } = require('../src/utils/sepayPoller');
+const { findMatchingTransaction } = await import('../src/utils/sepayPoller.js');
 
 describe('SePay poller transaction matching', () => {
     const order = { order_code: 'ORD1234567890123', total_amount: 100000 };
